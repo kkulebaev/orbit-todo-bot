@@ -12,7 +12,7 @@
 
 # Orbit TODO Bot 🪐
 
-Telegram TODO bot for personal use (Kostya + Dasha).
+Telegram TODO bot for small teams and families.
 
 ## Features
 
