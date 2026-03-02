@@ -1,15 +1,12 @@
 import 'dotenv/config';
-import { Bot, Context, InlineKeyboard } from 'grammy';
+import { Context, InlineKeyboard } from 'grammy';
 import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
+import { bot } from './bot-instance.js';
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
-
-if (!BOT_TOKEN) throw new Error('Missing BOT_TOKEN in env');
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
 
 const prisma = new PrismaClient();
-const bot = new Bot(BOT_TOKEN);
 
 function mustBePrivateChat(ctx: Context) {
   return ctx.chat?.type === 'private';
@@ -577,15 +574,15 @@ bot.catch((err) => {
   console.error('Bot error', err.error);
 });
 
-bot.start({
-  onStart: async () => {
-    console.log('TODO bot started');
-    console.log('DATABASE_URL:', process.env.DATABASE_URL);
-    try {
-      await prisma.user.count();
-      console.log('DB check: OK');
-    } catch (e) {
-      console.error('DB check: FAILED', e);
-    }
-  },
-});
+// Note: bot.start() (long polling) is disabled for Render/webhook deployments.
+// Webhook server is implemented in src/server.ts and calls bot.handleUpdate().
+export async function diagnostics() {
+  console.log('Orbit bot handlers loaded');
+  console.log('DATABASE_URL:', process.env.DATABASE_URL);
+  try {
+    await prisma.user.count();
+    console.log('DB check: OK');
+  } catch (e) {
+    console.error('DB check: FAILED', e);
+  }
+}

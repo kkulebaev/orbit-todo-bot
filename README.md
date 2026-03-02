@@ -20,6 +20,29 @@ Telegram TODO bot for small teams and families.
 - Lists with inline buttons (Done/Reopen/Assign/Edit/Delete)
 - PostgreSQL storage (via Prisma)
 
+## Deploy on Render (recommended)
+
+1) Create a **PostgreSQL** instance on Render
+2) Create a **Web Service** from this repo
+3) Set env vars:
+   - `BOT_TOKEN`
+   - `DATABASE_URL` (from Render Postgres)
+   - `PUBLIC_URL` (your Render service URL, e.g. `https://orbit-todo-bot.onrender.com`)
+4) Build Command:
+
+```bash
+npm ci && npm run build && npx prisma generate
+```
+
+5) Start Command:
+
+```bash
+npx prisma db push && npm start
+```
+
+The service will auto-register Telegram webhook at:
+`$PUBLIC_URL/telegram/webhook`
+
 ## Local run (dev)
 
 1) Create `.env` from `.env.example`
