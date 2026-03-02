@@ -1,0 +1,74 @@
+// Prisma schema for Telegram TODO bot
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  open
+  done
+}
+
+model User {
+  id             String   @id @default(uuid())
+  numId          Int      @unique @default(autoincrement())
+  telegramUserId BigInt   @unique
+  username       String?
+  firstName      String?
+  createdAt      DateTime @default(now())
+
+  createdTasks   Task[]   @relation("TaskCreatedBy")
+  assignedTasks  Task[]   @relation("TaskAssignedTo")
+  invitesSent    Invite[]
+  pendingActions PendingAction[]
+}
+
+model Invite {
+  username     String   @id
+  invitedById  String
+  invitedBy    User     @relation(fields: [invitedById], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model Task {
+  id           String     @id @default(uuid())
+  numId        Int        @unique @default(autoincrement())
+  title        String
+  status       TaskStatus @default(open)
+  createdAt    DateTime   @default(now())
+  doneAt       DateTime?
+
+  createdById  String
+  createdBy    User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  assignedToId String
+  assignedTo   User       @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+
+  @@index([status, assignedToId])
+  @@index([status, createdById])
+
+  pendingEdits PendingAction[]
+}
+
+enum PendingActionKind {
+  editTitle
+}
+
+model PendingAction {
+  id        String            @id @default(uuid())
+  kind      PendingActionKind
+  createdAt DateTime          @default(now())
+
+  userId    String
+  user      User              @relation(fields: [userId], references: [id])
+
+  taskId    String?
+  task      Task?             @relation(fields: [taskId], references: [id])
+
+  @@index([userId, createdAt])
+}
