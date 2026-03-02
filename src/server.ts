@@ -28,8 +28,9 @@ app.post('/telegram/webhook', async (req: Request, res: Response) => {
 
 app.get('/healthz', (_req: Request, res: Response) => res.status(200).send('ok'));
 
-app.listen(PORT, async () => {
-  console.log(`Orbit bot webhook server listening on :${PORT}`);
+// Render requires binding to 0.0.0.0 on the provided PORT
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`Orbit bot webhook server listening on 0.0.0.0:${PORT}`);
 
   // Register webhook on startup
   const hookUrl = `${PUBLIC_URL.replace(/\/$/, '')}/telegram/webhook`;
