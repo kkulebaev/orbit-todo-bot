@@ -60,7 +60,8 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      orderBy: [{ createdAt: 'desc' }],
+      // UX: show older tasks first (new tasks append to the end)
+      orderBy: [{ createdAt: 'asc' }],
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
       include: { assignedTo: true },
@@ -441,8 +442,20 @@ bot.callbackQuery(/^v:task:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
   const page = Number(ctx.match[3]);
   const messageId = ctx.callbackQuery.message?.message_id;
   if (!messageId) return;
-  await ctx.answerCallbackQuery();
-  await showTaskDetail(ctx, taskNumId, mode, page, messageId);
+
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {}
+
+  try {
+    await showTaskDetail(ctx, taskNumId, mode, page, messageId);
+  } catch (e) {
+    console.error('showTaskDetail failed', { taskNumId, mode, page, e });
+    try {
+      await ctx.answerCallbackQuery({ text: 'Не получилось открыть задачу 😕 Попробуй 🔄 Обновить' });
+    } catch {}
+    await showList(ctx, mode, page, messageId);
+  }
 });
 
 bot.callbackQuery('noop', async (ctx) => {
