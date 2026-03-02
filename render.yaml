@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: orbit-todo-bot
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build && npx prisma generate
+    startCommand: npx prisma db push && npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
