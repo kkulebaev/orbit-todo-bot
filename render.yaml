@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: npm ci && npm run build && npx prisma generate
     startCommand: npx prisma db push && npm start
+    # Note: npm start runs prestart which waits for DB availability (helps on fresh Render Postgres provision)
     healthCheckPath: /healthz
     envVars:
       - key: BOT_TOKEN
