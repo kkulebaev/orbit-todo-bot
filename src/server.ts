@@ -32,6 +32,14 @@ app.get('/healthz', (_req: Request, res: Response) => res.status(200).send('ok')
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Orbit bot webhook server listening on 0.0.0.0:${PORT}`);
 
+  // Ensure grammY has botInfo loaded (required for webhook-only mode)
+  try {
+    await bot.init();
+    console.log('Bot initialized');
+  } catch (e) {
+    console.error('Failed to init bot', e);
+  }
+
   // Register webhook on startup
   const hookUrl = `${PUBLIC_URL.replace(/\/$/, '')}/telegram/webhook`;
   try {
