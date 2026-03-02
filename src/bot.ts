@@ -41,7 +41,7 @@ function fmtTaskLine(t: {
   status: TaskStatus;
   assignedTo: { firstName: string | null; username: string | null };
 }) {
-  const statusEmoji = t.status === 'done' ? '✅' : '🟦';
+  const statusEmoji = t.status === 'done' ? '✅' : '📝';
   return `${statusEmoji} ${t.title}\n👤 ${fmtUser(t.assignedTo)}`;
 }
 
@@ -77,7 +77,7 @@ function kbList(mode: ListMode, page: number, tasks: { numId: number; status: Ta
   // Task picker buttons
   tasks.forEach((t, idx) => {
     const n = page * PAGE_SIZE + idx + 1;
-    const emoji = t.status === 'done' ? '✅' : '🟦';
+    const emoji = t.status === 'done' ? '✅' : '⏳';
     kb.text(`${emoji} ${n}`, `v:task:${t.numId}:${mode}:${page}`);
     if ((idx + 1) % 4 === 0) kb.row();
   });
@@ -130,7 +130,7 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
     body = tasks
       .map((t, idx) => {
         const n = page * PAGE_SIZE + idx + 1;
-        const statusEmoji = t.status === 'done' ? '✅' : '🟦';
+        const statusEmoji = t.status === 'done' ? '✅' : '⏳';
         return `${statusEmoji} <b>${n}.</b> ${escapeHtml(t.title)} — <i>${escapeHtml(fmtUser(t.assignedTo))}</i>`;
       })
       .join('\n');
@@ -159,12 +159,12 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
 
 function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, page: number) {
   const kb = new InlineKeyboard();
-  if (status === 'open') kb.text('✅ Done', `t:done:${taskNumId}:${mode}:${page}`);
-  else kb.text('🔁 Reopen', `t:reopen:${taskNumId}:${mode}:${page}`);
-  kb.text('👤 Assign', `t:assign:${taskNumId}:${mode}:${page}`);
-  kb.text('📝 Edit', `t:edit:${taskNumId}:${mode}:${page}`);
+  if (status === 'open') kb.text('✅ Готово', `t:done:${taskNumId}:${mode}:${page}`);
+  else kb.text('🔁 Вернуть', `t:reopen:${taskNumId}:${mode}:${page}`);
+  kb.text('👤 Назначить', `t:assign:${taskNumId}:${mode}:${page}`);
+  kb.text('📝 Изменить', `t:edit:${taskNumId}:${mode}:${page}`);
   kb.row();
-  kb.text('🗑 Delete', `t:del:${taskNumId}:${mode}:${page}`);
+  kb.text('🗑 Удалить', `t:del:${taskNumId}:${mode}:${page}`);
   kb.text('⬅️ Назад', `v:list:${mode}:${page}`);
   return kb;
 }
@@ -187,7 +187,7 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
     return;
   }
 
-  const statusLine = task.status === 'done' ? '✅ Выполнено' : '🟦 В работе';
+  const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
   const text =
     `📝 <b>Задача</b>\n\n` +
     `<b>${escapeHtml(task.title)}</b>\n\n` +
@@ -464,7 +464,7 @@ bot.use(async (ctx, next) => {
     const after = (ctx as any)._matchedCallbackHandled;
     if (!before && !after) {
       try {
-        await ctx.answerCallbackQuery({ text: 'Не понял кнопку 🙃 Обнови список: 🔄 Refresh' });
+        await ctx.answerCallbackQuery({ text: 'Не понял кнопку 🙃 Обнови список: 🔄 Обновить' });
       } catch {
         // ignore
       }
@@ -593,7 +593,7 @@ bot.callbackQuery(/^t:assign:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
   for (const u of users) {
     kb.text(fmtUser(u), `t:assignTo:${taskNumId}:${u.numId}:${mode}:${page}`).row();
   }
-  kb.text('⬅️ Back', `v:task:${taskNumId}:${mode}:${page}`);
+  kb.text('⬅️ Назад', `v:task:${taskNumId}:${mode}:${page}`);
 
   try {
     await ctx.api.editMessageText(ctx.chat!.id, messageId, 'Кому назначить? 👇', { reply_markup: kb });
