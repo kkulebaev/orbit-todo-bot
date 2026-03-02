@@ -10,8 +10,7 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
-    "test": "echo \"OK\"",
-    "prestart": "node dist/wait-for-db.js"
+    "test": "echo \"OK\""
   },
   "keywords": [],
   "author": "",
