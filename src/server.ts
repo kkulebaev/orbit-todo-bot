@@ -1,5 +1,8 @@
 import 'dotenv/config';
 import express, { type Request, type Response } from 'express';
+
+// Register all bot handlers (commands/callbacks)
+import './bot.js';
 import { bot } from './bot-instance.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
