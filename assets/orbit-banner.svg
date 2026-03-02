@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="240" viewBox="0 0 1200 240">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f1a"/>
+      <stop offset="1" stop-color="#1a1030"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff5ea8"/>
+      <stop offset="1" stop-color="#6ee7ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="240" rx="28" fill="url(#bg)"/>
+
+  <!-- stars -->
+  <g fill="#eaf2ff" opacity="0.7">
+    <circle cx="120" cy="60" r="2"/>
+    <circle cx="220" cy="40" r="1.5"/>
+    <circle cx="320" cy="90" r="1.2"/>
+    <circle cx="980" cy="60" r="1.8"/>
+    <circle cx="1040" cy="110" r="1.1"/>
+    <circle cx="890" cy="150" r="1.4"/>
+    <circle cx="760" cy="50" r="1.1"/>
+    <circle cx="640" cy="100" r="1.3"/>
+  </g>
+
+  <!-- planet -->
+  <g transform="translate(110 58)">
+    <circle cx="90" cy="62" r="58" fill="#2b2f44"/>
+    <circle cx="70" cy="48" r="10" fill="#3b4060" opacity="0.9"/>
+    <circle cx="110" cy="80" r="14" fill="#3b4060" opacity="0.9"/>
+    <circle cx="98" cy="45" r="6" fill="#4b5177" opacity="0.9"/>
+
+    <!-- orbit ring -->
+    <ellipse cx="90" cy="62" rx="96" ry="34" fill="none" stroke="url(#orbit)" stroke-width="8" opacity="0.95"/>
+    <ellipse cx="90" cy="62" rx="96" ry="34" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.18"/>
+
+    <!-- small satellite -->
+    <g transform="translate(168 46)">
+      <circle cx="0" cy="0" r="7" fill="#6ee7ff" opacity="0.95"/>
+      <rect x="-14" y="-3" width="8" height="6" rx="2" fill="#cfe6ff" opacity="0.9"/>
+      <rect x="6" y="-3" width="8" height="6" rx="2" fill="#cfe6ff" opacity="0.9"/>
+    </g>
+  </g>
+
+  <!-- title -->
+  <text x="340" y="110" fill="#ffffff" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial" font-size="54" font-weight="800">Orbit TODO Bot</text>
+  <text x="340" y="160" fill="#cfe6ff" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial" font-size="22">
+    Telegram task manager with inline buttons • Postgres + Prisma • OpenClaw-friendly
+  </text>
+
+  <rect x="340" y="178" width="560" height="6" rx="3" fill="url(#orbit)" opacity="0.9"/>
+</svg>
