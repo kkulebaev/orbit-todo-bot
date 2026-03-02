@@ -46,6 +46,8 @@ function fmtTaskLine(t: {
 }
 
 type ListMode = 'my' | 'all' | 'done';
+
+type PendingMode = 'my' | 'all' | 'done';
 const PAGE_SIZE = 8;
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
@@ -85,14 +87,17 @@ function kbList(mode: ListMode, page: number, tasks: { numId: number; status: Ta
   const prevEnabled = page > 0;
   const nextEnabled = page < maxPage;
 
-  kb.text(prevEnabled ? '⬅️ Prev' : '·', prevEnabled ? `v:list:${mode}:${page - 1}` : 'noop');
-  kb.text('🔄 Refresh', `v:list:${mode}:${page}`);
-  kb.text(nextEnabled ? 'Next ➡️' : '·', nextEnabled ? `v:list:${mode}:${page + 1}` : 'noop');
+  kb.text('➕ Добавить', `v:add:${mode}:${page}`);
+  kb.text('🔄 Обновить', `v:list:${mode}:${page}`);
   kb.row();
 
-  kb.text(mode === 'my' ? '👤 My ✅' : '👤 My', `v:list:my:0`);
-  kb.text(mode === 'all' ? '👥 All ✅' : '👥 All', `v:list:all:0`);
-  kb.text(mode === 'done' ? '🏁 Done ✅' : '🏁 Done', `v:list:done:0`);
+  kb.text(prevEnabled ? '⬅️' : '·', prevEnabled ? `v:list:${mode}:${page - 1}` : 'noop');
+  kb.text(nextEnabled ? '➡️' : '·', nextEnabled ? `v:list:${mode}:${page + 1}` : 'noop');
+  kb.row();
+
+  kb.text(mode === 'my' ? '👤 Мои ✅' : '👤 Мои', `v:list:my:0`);
+  kb.text(mode === 'all' ? '👥 Все ✅' : '👥 Все', `v:list:all:0`);
+  kb.text(mode === 'done' ? '🏁 Готово ✅' : '🏁 Готово', `v:list:done:0`);
 
   return kb;
 }
@@ -160,7 +165,7 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
   kb.text('📝 Edit', `t:edit:${taskNumId}:${mode}:${page}`);
   kb.row();
   kb.text('🗑 Delete', `t:del:${taskNumId}:${mode}:${page}`);
-  kb.text('⬅️ Back', `v:list:${mode}:${page}`);
+  kb.text('⬅️ Назад', `v:list:${mode}:${page}`);
   return kb;
 }
 
@@ -204,11 +209,9 @@ bot.command('start', async (ctx) => {
   await ctx.reply(
     `Привет, ${escapeHtml(fmtUser(user))}! ✨\n\n` +
       `Я <b>Orbit</b> 🪐 — ваш милый TODO-бот.\n\n` +
-      `Быстрый старт:\n` +
-      `• Добавить: <code>/add купить молоко</code>\n` +
-      `• Назначить Даше: <code>/add @kulebaevadaria_nv купить молоко</code>\n` +
-      `• Открыть панель: /my\n\n` +
-      `Дальше всё через кнопки 👇`,
+      `Открой панель: /my\n` +
+      `Быстро добавить: <code>/add купить молоко</code>\n\n` +
+      `Но удобнее — через кнопку <b>➕ Добавить</b> в панели 👇`,
     { parse_mode: 'HTML' },
   );
 
@@ -324,8 +327,32 @@ bot.on('message:text', async (ctx, next) => {
     await prisma.task.update({ where: { id: pending.taskId }, data: { title: newTitle } });
     await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
-    await ctx.reply(`✏️ Обновил задачу: \n\n${fmtTaskLine({ ...task, title: newTitle })}`);
-    await showList(ctx, 'my', 0);
+    await ctx.reply(`✏️ Обновил задачу:\n\n${fmtTaskLine({ ...task, title: newTitle })}`);
+
+    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
+    const page = pending.panelPage ?? 0;
+    const panelMessageId = pending.panelMessageId ?? undefined;
+    await showList(ctx, mode, page, panelMessageId);
+    return;
+  }
+
+  if (pending.kind === PendingActionKind.addTask) {
+    const title = text.slice(0, 200);
+
+    await prisma.task.create({
+      data: {
+        title,
+        createdById: me.id,
+        assignedToId: me.id,
+      },
+    });
+
+    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+
+    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
+    const page = pending.panelPage ?? 0;
+    const panelMessageId = pending.panelMessageId ?? undefined;
+    await showList(ctx, mode, page, panelMessageId);
     return;
   }
 
@@ -355,6 +382,55 @@ bot.callbackQuery(/^v:list:(my|all|done):(\d+)$/, async (ctx) => {
   const messageId = ctx.callbackQuery.message?.message_id;
   if (!messageId) return;
   await ctx.answerCallbackQuery();
+  await showList(ctx, mode, page, messageId);
+});
+
+bot.callbackQuery(/^v:add:(my|all|done):(\d+)$/, async (ctx) => {
+  (ctx as any)._matchedCallbackHandled = true;
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {}
+
+  const mode = ctx.match[1] as ListMode;
+  const page = Number(ctx.match[2]);
+  const messageId = ctx.callbackQuery.message?.message_id;
+  if (!messageId) return;
+
+  const me = await upsertUserFromCtx(ctx);
+  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+  await prisma.pendingAction.create({
+    data: {
+      kind: PendingActionKind.addTask,
+      userId: me.id,
+      panelMode: mode,
+      panelPage: page,
+      panelMessageId: messageId,
+    },
+  });
+
+  const kb = new InlineKeyboard().text('❌ Отмена', 'v:cancel');
+
+  await ctx.api.editMessageText(ctx.chat!.id, messageId, '✍️ Напиши текст задачи одним сообщением.', {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+bot.callbackQuery(/^v:cancel$/, async (ctx) => {
+  (ctx as any)._matchedCallbackHandled = true;
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {}
+
+  const messageId = ctx.callbackQuery.message?.message_id;
+  if (!messageId) return;
+
+  const me = await upsertUserFromCtx(ctx);
+  const pending = await prisma.pendingAction.findFirst({ where: { userId: me.id }, orderBy: { createdAt: 'desc' } });
+  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+
+  const mode = (pending?.panelMode as PendingMode | null) ?? 'my';
+  const page = pending?.panelPage ?? 0;
   await showList(ctx, mode, page, messageId);
 });
 
