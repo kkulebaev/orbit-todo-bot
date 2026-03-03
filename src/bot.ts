@@ -165,7 +165,7 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
   kb.text('👤 Назначить', `t:assign:${taskNumId}:${mode}:${page}`);
   kb.text('📝 Изменить', `t:edit:${taskNumId}:${mode}:${page}`);
   kb.row();
-  kb.text('🗑 Удалить', `t:del:${taskNumId}:${mode}:${page}`);
+  kb.text('🗑 Удалить', `t:delask:${taskNumId}:${mode}:${page}`);
   kb.text('⬅️ Назад', `v:list:${mode}:${page}`);
   return kb;
 }
@@ -490,6 +490,47 @@ bot.use(async (ctx, next) => {
 
 // --- Task actions (from detail view) ---
 
+bot.callbackQuery(/^t:delask:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
+  (ctx as any)._matchedCallbackHandled = true;
+
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {}
+
+  const taskNumId = Number(ctx.match[1]);
+  const mode = ctx.match[2] as ListMode;
+  const page = Number(ctx.match[3]);
+  const messageId = ctx.callbackQuery.message?.message_id;
+  if (!messageId) return;
+
+  const kb = new InlineKeyboard()
+    .text('✅ Да, удалить', `t:delyes:${taskNumId}:${mode}:${page}`)
+    .row()
+    .text('❌ Отмена', `v:task:${taskNumId}:${mode}:${page}`);
+
+  await ctx.api.editMessageText(ctx.chat!.id, messageId, '🗑 Удалить задачу? Это действие нельзя отменить.', {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+bot.callbackQuery(/^t:delyes:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
+  (ctx as any)._matchedCallbackHandled = true;
+
+  try {
+    await ctx.answerCallbackQuery({ text: 'Удаляю…' });
+  } catch {}
+
+  const taskNumId = Number(ctx.match[1]);
+  const mode = ctx.match[2] as ListMode;
+  const page = Number(ctx.match[3]);
+  const messageId = ctx.callbackQuery.message?.message_id;
+  if (!messageId) return;
+
+  await prisma.task.delete({ where: { numId: taskNumId } });
+  await showList(ctx, mode, page, messageId);
+});
+
 bot.callbackQuery(/^t:edit:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
   (ctx as any)._matchedCallbackHandled = true;
 
@@ -528,7 +569,7 @@ bot.callbackQuery(/^t:edit:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
   );
 });
 
-bot.callbackQuery(/^t:(done|reopen|del):(\d+):(my|all|done):(\d+)$/, async (ctx) => {
+bot.callbackQuery(/^t:(done|reopen):(\d+):(my|all|done):(\d+)$/, async (ctx) => {
   (ctx as any)._matchedCallbackHandled = true;
 
   // answer early
@@ -538,7 +579,7 @@ bot.callbackQuery(/^t:(done|reopen|del):(\d+):(my|all|done):(\d+)$/, async (ctx)
     // ignore
   }
 
-  const action = ctx.match[1] as 'done' | 'reopen' | 'del';
+  const action = ctx.match[1] as 'done' | 'reopen';
   const taskNumId = Number(ctx.match[2]);
   const mode = ctx.match[3] as ListMode;
   const page = Number(ctx.match[4]);
@@ -554,11 +595,6 @@ bot.callbackQuery(/^t:(done|reopen|del):(\d+):(my|all|done):(\d+)$/, async (ctx)
 
   // Access checks disabled for now (2-person bot). We'll add roles/permissions later.
 
-  if (action === 'del') {
-    await prisma.task.delete({ where: { numId: taskNumId } });
-    await showList(ctx, mode, page, messageId);
-    return;
-  }
 
   const updated = await prisma.task.update({
     where: { numId: taskNumId },
