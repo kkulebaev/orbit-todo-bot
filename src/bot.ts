@@ -178,15 +178,16 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
   });
 
   if (!task) {
-    await ctx.answerCallbackQuery({ text: 'Задача не найдена 🙃' });
-    await showList(ctx, mode, page, editMessageId);
+    // Don't rely on callback popups (we may have already answered the callback).
+    await ctx.api.editMessageText(ctx.chat!.id, editMessageId, '🙃 Задача не найдена.', {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('⬅️ Назад', `v:list:${mode}:${page}`),
+    });
     return;
   }
 
-  if (task.createdById !== viewer.id && task.assignedToId !== viewer.id) {
-    await ctx.answerCallbackQuery({ text: 'Нет доступа' });
-    return;
-  }
+  // UX: allow viewing tasks in the shared workspace (2-person bot). Actions are still gated elsewhere.
+  // If you want stricter privacy later, re-enable creator/assignee check.
 
   const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
   const text =
