@@ -20,6 +20,23 @@ app.use(express.json());
 // Webhook endpoint
 app.post('/telegram/webhook', async (req: Request, res: Response) => {
   try {
+    const u: any = req.body;
+
+    // Minimal request logging (safe: no secrets)
+    if (u?.callback_query?.data) {
+      console.log('incoming: callback_query', {
+        from: u.callback_query.from?.id,
+        data: String(u.callback_query.data).slice(0, 120),
+      });
+    } else if (u?.message?.text) {
+      console.log('incoming: message', {
+        from: u.message.from?.id,
+        text: String(u.message.text).slice(0, 120),
+      });
+    } else {
+      console.log('incoming: update', Object.keys(u ?? {}));
+    }
+
     // Pass update to grammY
     await bot.handleUpdate(req.body);
     res.sendStatus(200);
