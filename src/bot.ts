@@ -510,9 +510,7 @@ bot.callbackQuery(/^t:edit:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
     await showList(ctx, mode, page, messageId);
     return;
   }
-  if (task.createdById !== me.id && task.assignedToId !== me.id) {
-    return;
-  }
+  // Access checks disabled for now (2-person bot). We'll add roles/permissions later.
 
   await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
   await prisma.pendingAction.create({
@@ -554,9 +552,7 @@ bot.callbackQuery(/^t:(done|reopen|del):(\d+):(my|all|done):(\d+)$/, async (ctx)
     return;
   }
 
-  if (task.createdById !== me.id && task.assignedToId !== me.id) {
-    return;
-  }
+  // Access checks disabled for now (2-person bot). We'll add roles/permissions later.
 
   if (action === 'del') {
     await prisma.task.delete({ where: { numId: taskNumId } });
@@ -598,9 +594,7 @@ bot.callbackQuery(/^t:assign:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
     await showList(ctx, mode, page, messageId);
     return;
   }
-  if (task.createdById !== me.id && task.assignedToId !== me.id) {
-    return;
-  }
+  // Access checks disabled for now (2-person bot). We'll add roles/permissions later.
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } });
   const kb = new InlineKeyboard();
@@ -640,9 +634,7 @@ bot.callbackQuery(/^t:assignTo:(\d+):(\d+):(my|all|done):(\d+)$/, async (ctx) =>
     await showList(ctx, mode, page, messageId);
     return;
   }
-  if (task.createdById !== me.id && task.assignedToId !== me.id) {
-    return;
-  }
+  // Access checks disabled for now (2-person bot). We'll add roles/permissions later.
 
   const toUser = await prisma.user.findUnique({ where: { numId: toUserNumId } });
   if (!toUser) {
