@@ -89,14 +89,15 @@ describe('callback-dispatcher routing', () => {
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
   });
 
-  it('routes t:done to task.update then showTaskDetail', async () => {
+  it('routes t:done to task.update then returns to my list', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
 
     await dispatchCallbackData(ctx, { kind: 't:done', taskNumId: 7, mode: 'all', page: 1 }, deps as any);
 
     expect(deps.prisma.task.update).toHaveBeenCalled();
-    expect(deps.showTaskDetail).toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
+    expect(deps.showTaskDetail).not.toHaveBeenCalled();
   });
 
   it('routes v:addDraft:cancel to pendingAction.delete and reply', async () => {

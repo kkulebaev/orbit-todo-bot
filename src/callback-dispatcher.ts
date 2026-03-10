@@ -168,15 +168,25 @@ export async function dispatchCallbackData(ctx: any, parsed: CallbackData, deps:
     case 't:done':
     case 't:reopen': {
       if (!messageId) return;
-      const updated = await deps.prisma.task.update({
+      const isDone = parsed.kind === 't:done';
+
+      await deps.prisma.task.update({
         where: { numId: parsed.taskNumId },
         data: {
-          status: parsed.kind === 't:done' ? 'done' : 'open',
-          doneAt: parsed.kind === 't:done' ? new Date() : null,
+          status: isDone ? 'done' : 'open',
+          doneAt: isDone ? new Date() : null,
         },
         include: { assignedTo: true, createdBy: true },
       });
-      await deps.showTaskDetail(ctx, updated.numId, parsed.mode, parsed.page, messageId);
+
+      // UX: after marking a task as done, return user to "Мои задачи"
+      if (isDone) {
+        await deps.showList(ctx, 'my', 0, messageId);
+        return;
+      }
+
+      // For reopen keep user on the task screen
+      await deps.showTaskDetail(ctx, parsed.taskNumId, parsed.mode, parsed.page, messageId);
       return;
     }
 
