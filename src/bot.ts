@@ -4,6 +4,7 @@ import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/clien
 import { bot } from './bot-instance.js';
 import { escapeHtml, fmtTaskLine, fmtUser, kbList, PAGE_SIZE, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
+import { dispatchCallbackData } from './callback-dispatcher.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -380,234 +381,18 @@ bot.on('callback_query:data', async (ctx, next) => {
     await ctx.answerCallbackQuery();
   } catch {}
 
-  const messageId = ctx.callbackQuery.message?.message_id;
-
   try {
-    switch (parsed.kind) {
-      case 'noop':
-        return;
-
-      case 'v:list':
-        if (!messageId) return;
-        await showList(ctx, parsed.mode, parsed.page, messageId);
-        return;
-
-      case 'v:add': {
-        if (!messageId) return;
-        const me = await upsertUserFromCtx(ctx);
-        await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-        await prisma.pendingAction.create({
-          data: {
-            kind: PendingActionKind.addTask,
-            userId: me.id,
-            panelMode: parsed.mode,
-            panelPage: parsed.page,
-            panelMessageId: messageId,
-          },
-        });
-
-        const kb = new InlineKeyboard().text('❌ Отмена', 'v:cancel');
-
-        await ctx.api.editMessageText(ctx.chat!.id, messageId, '✍️ Напиши текст задачи одним сообщением.', {
-          parse_mode: 'HTML',
-          reply_markup: kb,
-        });
-        return;
-      }
-
-      case 'v:cancel': {
-        if (!messageId) return;
-        const me = await upsertUserFromCtx(ctx);
-        const pending = await prisma.pendingAction.findFirst({ where: { userId: me.id }, orderBy: { createdAt: 'desc' } });
-        await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-
-        const mode = (pending?.panelMode as PendingMode | null) ?? 'my';
-        const page = pending?.panelPage ?? 0;
-        await showList(ctx, mode, page, messageId);
-        return;
-      }
-
-      case 'v:addDraft': {
-        const me = await upsertUserFromCtx(ctx);
-        const pending = await prisma.pendingAction.findFirst({
-          where: { userId: me.id, kind: PendingActionKind.addTaskDraft },
-          orderBy: { createdAt: 'desc' },
-        });
-
-        if (!pending) {
-          await ctx.reply('Черновик задачи не найден 🙃');
-          return;
-        }
-
-        if (parsed.action === 'cancel') {
-          await prisma.pendingAction.delete({ where: { id: pending.id } });
-          await ctx.reply('Ок, не добавляю ✅');
-          return;
-        }
-
-        const title = (pending as any).draftTitle?.trim();
-        if (!title) {
-          await prisma.pendingAction.delete({ where: { id: pending.id } });
-          await ctx.reply('Пустой черновик, нечего добавлять 🙃');
-          return;
-        }
-
-        const task = await prisma.task.create({
-          data: {
-            title: title.slice(0, 200),
-            createdById: me.id,
-            assignedToId: me.id,
-          },
-          include: { assignedTo: true },
-        });
-
-        await prisma.pendingAction.delete({ where: { id: pending.id } });
-
-        await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
-        await showList(ctx, 'my', 0);
-        return;
-      }
-
-      case 'v:task': {
-        if (!messageId) return;
-        try {
-          await showTaskDetail(ctx, parsed.taskNumId, parsed.mode, parsed.page, messageId);
-        } catch (e) {
-          console.error('showTaskDetail failed', { parsed, e });
-          try {
-            await ctx.answerCallbackQuery({ text: 'Не получилось открыть задачу 😕 Попробуй 🔄 Обновить' } as any);
-          } catch {}
-          await showList(ctx, parsed.mode, parsed.page, messageId);
-        }
-        return;
-      }
-
-      case 't:delask': {
-        if (!messageId) return;
-        const kb = new InlineKeyboard()
-          .text('✅ Да, удалить', `t:delyes:${parsed.taskNumId}:${parsed.mode}:${parsed.page}`)
-          .row()
-          .text('❌ Отмена', `v:task:${parsed.taskNumId}:${parsed.mode}:${parsed.page}`);
-
-        await ctx.api.editMessageText(ctx.chat!.id, messageId, '🗑 Удалить задачу? Это действие нельзя отменить.', {
-          parse_mode: 'HTML',
-          reply_markup: kb,
-        });
-        return;
-      }
-
-      case 't:delyes': {
-        if (!messageId) return;
-        try {
-          await ctx.answerCallbackQuery({ text: 'Удаляю…' } as any);
-        } catch {}
-        await prisma.task.delete({ where: { numId: parsed.taskNumId } });
-        await showList(ctx, parsed.mode, parsed.page, messageId);
-        return;
-      }
-
-      case 't:edit': {
-        const me = await upsertUserFromCtx(ctx);
-        const task = await prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
-        if (!task) {
-          if (messageId) await showList(ctx, parsed.mode, parsed.page, messageId);
-          return;
-        }
-
-        await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-        await prisma.pendingAction.create({
-          data: {
-            kind: PendingActionKind.editTitle,
-            userId: me.id,
-            taskId: task.id,
-          },
-        });
-
-        await ctx.reply(
-          `✏️ Ок! Пришли новым сообщением <b>новый текст задачи</b>.\n\n` + `Отмена: /cancel`,
-          { parse_mode: 'HTML' },
-        );
-        return;
-      }
-
-      case 't:done':
-      case 't:reopen': {
-        if (!messageId) return;
-        const action = parsed.kind === 't:done' ? 'done' : 'reopen';
-
-        const task = await prisma.task.findUnique({
-          where: { numId: parsed.taskNumId },
-          include: { assignedTo: true, createdBy: true },
-        });
-        if (!task) {
-          await showList(ctx, parsed.mode, parsed.page, messageId);
-          return;
-        }
-
-        const updated = await prisma.task.update({
-          where: { numId: parsed.taskNumId },
-          data: {
-            status: action === 'done' ? 'done' : 'open',
-            doneAt: action === 'done' ? new Date() : null,
-          },
-          include: { assignedTo: true, createdBy: true },
-        });
-
-        await showTaskDetail(ctx, updated.numId, parsed.mode, parsed.page, messageId);
-        return;
-      }
-
-      case 't:assign': {
-        if (!messageId) return;
-        const task = await prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
-        if (!task) {
-          await showList(ctx, parsed.mode, parsed.page, messageId);
-          return;
-        }
-
-        const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } });
-        const kb = new InlineKeyboard();
-        for (const u of users) {
-          kb.text(fmtUser(u), `t:assignTo:${parsed.taskNumId}:${u.numId}:${parsed.mode}:${parsed.page}`).row();
-        }
-        kb.text('⬅️ Назад', `v:task:${parsed.taskNumId}:${parsed.mode}:${parsed.page}`);
-
-        try {
-          await ctx.api.editMessageText(ctx.chat!.id, messageId, 'Кому назначить? 👇', { reply_markup: kb });
-        } catch (e) {
-          console.error('editMessageText(assign) failed, fallback to reply()', e);
-          await ctx.reply('Кому назначить? 👇', { reply_markup: kb });
-        }
-        return;
-      }
-
-      case 't:assignTo': {
-        if (!messageId) return;
-        const task = await prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
-        if (!task) {
-          await showList(ctx, parsed.mode, parsed.page, messageId);
-          return;
-        }
-
-        const toUser = await prisma.user.findUnique({ where: { numId: parsed.toUserNumId } });
-        if (!toUser) {
-          await showTaskDetail(ctx, parsed.taskNumId, parsed.mode, parsed.page, messageId);
-          return;
-        }
-
-        const updated = await prisma.task.update({
-          where: { numId: parsed.taskNumId },
-          data: { assignedToId: toUser.id },
-          include: { assignedTo: true, createdBy: true },
-        });
-
-        await showTaskDetail(ctx, updated.numId, parsed.mode, parsed.page, messageId);
-        return;
-      }
-
-      default:
-        return;
-    }
+    await dispatchCallbackData(ctx, parsed, {
+      showList,
+      showTaskDetail,
+      upsertUserFromCtx,
+      prisma,
+      PendingActionKind,
+      InlineKeyboard,
+      fmtUser,
+      fmtTaskLine,
+    } as any);
+    return;
   } catch (e) {
     console.error('callback dispatcher error', { parsed, e });
     return next();
