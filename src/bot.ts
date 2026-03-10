@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Context, InlineKeyboard } from 'grammy';
 import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
 import { bot } from './bot-instance.js';
+import { escapeHtml, fmtTaskLine, fmtUser, kbList, PAGE_SIZE, type ListMode } from './utils.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -30,25 +31,7 @@ async function upsertUserFromCtx(ctx: Context) {
   });
 }
 
-function fmtUser(u: Pick<User, 'username' | 'firstName'>) {
-  if (u.username) return `@${u.username}`;
-  return u.firstName ?? 'user';
-}
-
-function fmtTaskLine(t: {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  assignedTo: { firstName: string | null; username: string | null };
-}) {
-  const statusEmoji = t.status === 'done' ? '✅' : '📝';
-  return `${statusEmoji} ${t.title}\n👤 ${fmtUser(t.assignedTo)}`;
-}
-
-type ListMode = 'my' | 'all' | 'done';
-
 type PendingMode = 'my' | 'all' | 'done';
-const PAGE_SIZE = 8;
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const where: any = {};
@@ -72,43 +55,6 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   return { tasks, total };
 }
 
-function kbList(mode: ListMode, page: number, tasks: { numId: number; status: TaskStatus }[], total: number) {
-  const kb = new InlineKeyboard();
-
-  // Task picker buttons
-  tasks.forEach((t, idx) => {
-    const n = page * PAGE_SIZE + idx + 1;
-    const emoji = t.status === 'done' ? '✅' : '⏳';
-    kb.text(`${emoji} ${n}`, `v:task:${t.numId}:${mode}:${page}`);
-    if ((idx + 1) % 4 === 0) kb.row();
-  });
-  kb.row();
-
-  const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
-  const prevEnabled = page > 0;
-  const nextEnabled = page < maxPage;
-
-  kb.text('➕ Добавить', `v:add:${mode}:${page}`);
-  kb.text('🔄 Обновить', `v:list:${mode}:${page}`);
-  kb.row();
-
-  kb.text(prevEnabled ? '⬅️' : '·', prevEnabled ? `v:list:${mode}:${page - 1}` : 'noop');
-  kb.text(nextEnabled ? '➡️' : '·', nextEnabled ? `v:list:${mode}:${page + 1}` : 'noop');
-  kb.row();
-
-  kb.text(mode === 'my' ? '👤 Мои ✅' : '👤 Мои', `v:list:my:0`);
-  kb.text(mode === 'all' ? '👥 Все ✅' : '👥 Все', `v:list:all:0`);
-  kb.text(mode === 'done' ? '🏁 Готово ✅' : '🏁 Готово', `v:list:done:0`);
-
-  return kb;
-}
-
-function escapeHtml(s: string) {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-}
 
 async function showList(ctx: Context, mode: ListMode, page: number, editMessageId?: number) {
   const viewer = await upsertUserFromCtx(ctx);
