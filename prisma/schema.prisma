@@ -58,6 +58,7 @@ model Task {
 enum PendingActionKind {
   editTitle
   addTask
+  addTaskDraft
 }
 
 model PendingAction {
@@ -75,6 +76,9 @@ model PendingAction {
   panelMode      String?
   panelPage      Int?
   panelMessageId Int?
+
+  // Draft payload for pending UI flows
+  draftTitle     String?
 
   @@index([userId, createdAt])
 }
