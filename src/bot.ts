@@ -60,8 +60,8 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      // UX: show older tasks first (new tasks append to the end)
-      orderBy: [{ createdAt: 'asc' }],
+      // UX: show newer tasks first
+      orderBy: [{ createdAt: 'desc' }],
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
       include: { assignedTo: true },
