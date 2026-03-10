@@ -17,10 +17,9 @@ export function fmtTaskLine(t: {
   id: string;
   title: string;
   status: TaskStatus;
-  assignedTo: { firstName: string | null; username: string | null };
 }) {
   const statusEmoji = t.status === 'done' ? '✅' : '📝';
-  return `${statusEmoji} ${t.title}\n👤 ${fmtUser(t.assignedTo)}`;
+  return `${statusEmoji} ${t.title}`;
 }
 
 export type ListMode = 'my' | 'all' | 'done';

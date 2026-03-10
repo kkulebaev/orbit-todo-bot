@@ -41,6 +41,7 @@ export type DispatchDeps = {
       create: (args: unknown) => Promise<unknown>;
     };
     user: {
+      // kept for future features; currently assignment is disabled
       findMany: (args: unknown) => Promise<Array<{ numId: number; username?: string | null; firstName?: string | null }>>;
       findUnique: (args: unknown) => Promise<{ id: string } | null>;
     };
@@ -211,35 +212,6 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       return;
     }
 
-    case 't:assign': {
-      if (!messageId) return;
-      const users = await deps.prisma.user.findMany({ orderBy: { createdAt: 'asc' } });
-      const kb = new deps.InlineKeyboard();
-      for (const u of users) {
-        kb.text(deps.fmtUser(u), `t:assignTo:${parsed.taskNumId}:${u.numId}:${parsed.mode}:${parsed.page}`).row();
-      }
-      kb.text('⬅️ Назад', `v:task:${parsed.taskNumId}:${parsed.mode}:${parsed.page}`);
-
-      await ctx.api.editMessageText(ctx.chat!.id, messageId, 'Кому назначить? 👇', { reply_markup: kb });
-      return;
-    }
-
-    case 't:assignTo': {
-      if (!messageId) return;
-      const toUser = await deps.prisma.user.findUnique({ where: { numId: parsed.toUserNumId } });
-      if (!toUser) {
-        await deps.showTaskDetail(ctx, parsed.taskNumId, parsed.mode, parsed.page, messageId);
-        return;
-      }
-
-      const updated = await deps.prisma.task.update({
-        where: { numId: parsed.taskNumId },
-        data: { assignedToId: toUser.id },
-        include: { assignedTo: true, createdBy: true },
-      });
-      await deps.showTaskDetail(ctx, updated.numId, parsed.mode, parsed.page, messageId);
-      return;
-    }
 
     default: {
       const _x: never = parsed;

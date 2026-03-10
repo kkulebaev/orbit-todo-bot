@@ -14,8 +14,7 @@ export type TaskCallback =
   | { kind: 't:edit'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:done'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:reopen'; taskNumId: number; mode: ListMode; page: number }
-  | { kind: 't:assign'; taskNumId: number; mode: ListMode; page: number }
-  | { kind: 't:assignTo'; taskNumId: number; toUserNumId: number; mode: ListMode; page: number };
+  ;
 
 export type CallbackData = ViewCallback | TaskCallback;
 
@@ -99,25 +98,6 @@ export function parseCallbackData(raw: string): CallbackData | null {
     }
   }
 
-  // t:assign:<taskNumId>:<mode>:<page>
-  {
-    const m = s.match(/^t:assign:(\d+):(my|all|done):(\d+)$/);
-    if (m) return { kind: 't:assign', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
-  }
-
-  // t:assignTo:<taskNumId>:<toUserNumId>:<mode>:<page>
-  {
-    const m = s.match(/^t:assignTo:(\d+):(\d+):(my|all|done):(\d+)$/);
-    if (m) {
-      return {
-        kind: 't:assignTo',
-        taskNumId: Number(m[1]),
-        toUserNumId: Number(m[2]),
-        mode: m[3] as any,
-        page: Number(m[4]),
-      };
-    }
-  }
 
   return null;
 }
@@ -146,10 +126,6 @@ export function formatCallbackData(d: CallbackData): string {
       return `t:done:${d.taskNumId}:${d.mode}:${d.page}`;
     case 't:reopen':
       return `t:reopen:${d.taskNumId}:${d.mode}:${d.page}`;
-    case 't:assign':
-      return `t:assign:${d.taskNumId}:${d.mode}:${d.page}`;
-    case 't:assignTo':
-      return `t:assignTo:${d.taskNumId}:${d.toUserNumId}:${d.mode}:${d.page}`;
     default: {
       // Exhaustiveness
       const _x: never = d;

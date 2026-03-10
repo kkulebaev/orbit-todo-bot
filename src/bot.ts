@@ -49,7 +49,7 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
       orderBy: [{ createdAt: 'desc' }],
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
-      include: { assignedTo: true },
+
     }),
     prisma.task.count({ where }),
   ]);
@@ -80,7 +80,7 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
       .map((t, idx) => {
         const n = page * PAGE_SIZE + idx + 1;
         const statusEmoji = t.status === 'done' ? '✅' : '⏳';
-        return `${statusEmoji} <b>${n}.</b> ${escapeHtml(t.title)} — <i>${escapeHtml(fmtUser(t.assignedTo))}</i>`;
+        return `${statusEmoji} <b>${n}.</b> ${escapeHtml(t.title)}`;
       })
       .join('\n');
 
@@ -110,7 +110,6 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
   const kb = new InlineKeyboard();
   if (status === 'open') kb.text('✅ Готово', `t:done:${taskNumId}:${mode}:${page}`);
   else kb.text('🔁 Вернуть', `t:reopen:${taskNumId}:${mode}:${page}`);
-  kb.text('👤 Назначить', `t:assign:${taskNumId}:${mode}:${page}`);
   kb.text('📝 Изменить', `t:edit:${taskNumId}:${mode}:${page}`);
   kb.row();
   kb.text('🗑 Удалить', `t:delask:${taskNumId}:${mode}:${page}`);
@@ -141,9 +140,7 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
   const text =
     `📝 <b>Задача</b>\n\n` +
     `<b>${escapeHtml(task.title)}</b>\n\n` +
-    `${statusLine}\n` +
-    `👤 Исполнитель: <b>${escapeHtml(fmtUser(task.assignedTo))}</b>\n` +
-    `✍️ Создал: <b>${escapeHtml(fmtUser(task.createdBy))}</b>`;
+    `${statusLine}`;
 
   await ctx.api.editMessageText(ctx.chat!.id, editMessageId, text, {
     parse_mode: 'HTML',
@@ -174,7 +171,6 @@ bot.command('help', async (ctx) => {
     `🪐 Orbit · help\n\n` +
       `📌 Команды:\n` +
       `/add <text> — создать задачу себе\n` +
-      `/add @username <text> — создать задачу другому (нужно, чтобы он/она сделал(а) /start)\n` +
       `/my — мои открытые\n` +
       `/all — все открытые\n` +
       `/done — выполненные\n` +
@@ -195,46 +191,22 @@ bot.command('add', async (ctx) => {
   const me = await upsertUserFromCtx(ctx);
   const text = (ctx.match as string | undefined)?.trim() ?? '';
   if (!text) {
-    await ctx.reply('Напиши так: <code>/add купить молоко</code> или <code>/add @username купить молоко</code>', { parse_mode: 'HTML' });
+    await ctx.reply('Напиши так: <code>/add купить молоко</code>', { parse_mode: 'HTML' });
     return;
   }
 
   const parsed = (await import('./bot-logic.js')).parseAddCommandText(text);
   if (!parsed) {
-    await ctx.reply('Напиши так: <code>/add купить молоко</code> или <code>/add @username купить молоко</code>', { parse_mode: 'HTML' });
+    await ctx.reply('Напиши так: <code>/add купить молоко</code>', { parse_mode: 'HTML' });
     return;
-  }
-
-  let assignedTo = me;
-  let title = parsed.title;
-
-  if (parsed.kind === 'assign') {
-    const username = parsed.username;
-
-    const other = await prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
-    });
-
-    if (!other) {
-      await prisma.invite.upsert({
-        where: { username },
-        update: { invitedById: me.id },
-        create: { username, invitedById: me.id },
-      });
-      await ctx.reply(`Я ещё не знаком с @${username} 🙃\nПусть он/она откроет этого бота и отправит /start — и всё заработает.`);
-      return;
-    }
-
-    assignedTo = other;
   }
 
   const task = await prisma.task.create({
     data: {
-      title,
+      title: parsed.title,
       createdById: me.id,
-      assignedToId: assignedTo.id,
+      assignedToId: me.id,
     },
-    include: { assignedTo: true },
   });
 
   await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
