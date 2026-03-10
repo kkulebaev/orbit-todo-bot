@@ -43,16 +43,67 @@ npx prisma db push && npm start
 The service will auto-register Telegram webhook at:
 `$PUBLIC_URL/telegram/webhook`
 
-## Local run (dev)
+## Development
 
-1) Create `.env` from `.env.example`
-2) Start services:
+### Requirements
+- Node.js **22**
+- Docker (for local Postgres)
+
+### Environment variables
+Create `.env` (not committed) with at least:
+- `BOT_TOKEN` — Telegram bot token
+- `PUBLIC_URL` — public https URL where Telegram can reach the webhook
+  - for local dev you can use a tunnel (ngrok/cloudflared) and set it here
+
+`DATABASE_URL` is taken from the environment. In `docker-compose.yml` it is set to a local Postgres inside the compose network.
+
+### Local run (webhook server + DB)
+Start Postgres + app in dev mode:
 
 ```bash
 docker compose up -d
 ```
 
+The server exposes:
+- `POST /telegram/webhook`
+- `GET /healthz` → `ok`
+
+### Tests
+```bash
+npm ci
+npm test
+```
+
+### Typecheck
+```bash
+npm run typecheck
+```
+
+## CI
+GitHub Actions runs on every PR and on pushes to `main`:
+- `npm test`
+- `npm run typecheck`
+
+## Production deploy (SSH + Docker Compose)
+On the prod server (`n8n-vps`), the project lives in `/opt/orbit-todo-bot`.
+
+Typical deploy:
+```bash
+ssh n8n-vps
+cd /opt/orbit-todo-bot
+
+git pull --ff-only origin main
+
+docker compose -f docker-compose.prod.yml build --pull
+
+docker compose -f docker-compose.prod.yml up -d
+
+docker compose -f docker-compose.prod.yml ps
+
+docker compose -f docker-compose.prod.yml logs --tail=80 orbit-bot
+```
+
 ## Notes
 
 - `.env` is intentionally not committed.
-- Database data is stored in a Docker volume (`todo_pg`).
+- Local DB data is stored in a Docker volume (`todo_pg`).
