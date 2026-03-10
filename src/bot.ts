@@ -197,13 +197,17 @@ bot.command('add', async (ctx) => {
     return;
   }
 
-  const m = text.match(/^@([A-Za-z0-9_]{5,})\s+(.+)$/);
-  let assignedTo = me;
-  let title = text;
+  const parsed = (await import('./bot-logic.js')).parseAddCommandText(text);
+  if (!parsed) {
+    await ctx.reply('Напиши так: <code>/add купить молоко</code> или <code>/add @username купить молоко</code>', { parse_mode: 'HTML' });
+    return;
+  }
 
-  if (m) {
-    const username = m[1];
-    title = m[2];
+  let assignedTo = me;
+  let title = parsed.title;
+
+  if (parsed.kind === 'assign') {
+    const username = parsed.username;
 
     const other = await prisma.user.findFirst({
       where: { username: { equals: username, mode: 'insensitive' } },
