@@ -3,9 +3,11 @@ import express, { type Request, type Response } from 'express';
 import { pathToFileURL } from 'node:url';
 
 export type BotLike = {
-  handleUpdate: (update: unknown) => Promise<unknown>;
-  init: () => Promise<unknown>;
-  api: { setWebhook: (url: string) => Promise<unknown> };
+  // grammY signature: handleUpdate(update, webhookReplyEnvelope?)
+  // Keep it loose to avoid coupling server.ts typing to grammY internals.
+  handleUpdate: (...args: any[]) => Promise<any>;
+  init: () => Promise<any>;
+  api: { setWebhook: (url: string) => Promise<any> };
 };
 
 export function createApp(bot: Pick<BotLike, 'handleUpdate'>) {
