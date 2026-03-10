@@ -12,14 +12,14 @@ describe('callback-data', () => {
   });
 
   it('parses view task', () => {
-    expect(parseCallbackData('v:task:10:all:2')).toEqual({ kind: 'v:task', taskNumId: 10, mode: 'all', page: 2 });
+    expect(parseCallbackData('v:task:10:my:2')).toEqual({ kind: 'v:task', taskNumId: 10, mode: 'my', page: 2 });
   });
 
   it('parses task actions', () => {
     expect(parseCallbackData('t:delask:5:my:0')).toEqual({ kind: 't:delask', taskNumId: 5, mode: 'my', page: 0 });
     expect(parseCallbackData('t:delyes:5:my:0')).toEqual({ kind: 't:delyes', taskNumId: 5, mode: 'my', page: 0 });
     expect(parseCallbackData('t:done:5:my:0')).toEqual({ kind: 't:done', taskNumId: 5, mode: 'my', page: 0 });
-    expect(parseCallbackData('t:reopen:5:my:0')).toEqual({ kind: 't:reopen', taskNumId: 5, mode: 'my', page: 0 });
+    expect(parseCallbackData('t:reopen:5:done:0')).toEqual({ kind: 't:reopen', taskNumId: 5, mode: 'done', page: 0 });
   });
 
   it('returns null on unknown', () => {
@@ -31,7 +31,7 @@ describe('callback-data', () => {
     const samples = [
       { kind: 'v:cancel' as const },
       { kind: 'v:addDraft' as const, action: 'confirm' as const },
-      { kind: 'v:list' as const, mode: 'all' as const, page: 3 },
+      { kind: 'v:list' as const, mode: 'my' as const, page: 3 },
       { kind: 't:done' as const, taskNumId: 9, mode: 'my' as const, page: 0 },
     ];
 

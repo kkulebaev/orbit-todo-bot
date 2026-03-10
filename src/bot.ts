@@ -33,7 +33,7 @@ async function upsertUserFromCtx(ctx: Context) {
   });
 }
 
-type PendingMode = 'my' | 'all' | 'done';
+type PendingMode = 'my' | 'done';
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const where: any = {};
@@ -64,9 +64,7 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
 
   const title = mode === 'my'
     ? '🪐 <b>Orbit · Мои задачи</b>'
-    : mode === 'all'
-      ? '🪐 <b>Orbit · Все задачи</b>'
-      : '🪐 <b>Orbit · Выполненные</b>';
+    : '🪐 <b>Orbit · Выполненные</b>';
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageInfo = total > 0 ? `\nСтраница: <b>${page + 1}</b> / <b>${totalPages}</b>` : '';
 
@@ -172,7 +170,6 @@ bot.command('help', async (ctx) => {
       `📌 Команды:\n` +
       `/add <text> — создать задачу себе\n` +
       `/my — мои открытые\n` +
-      `/all — все открытые\n` +
       `/done — выполненные\n` +
       `/cancel — отменить ввод (например редактирование)`,
   );
@@ -328,11 +325,6 @@ bot.on('message:text', async (ctx, next) => {
 bot.command('my', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
   await showList(ctx, 'my', 0);
-});
-
-bot.command('all', async (ctx) => {
-  if (!mustBePrivateChat(ctx)) return;
-  await showList(ctx, 'all', 0);
 });
 
 bot.command('done', async (ctx) => {

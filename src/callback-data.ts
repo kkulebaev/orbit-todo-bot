@@ -1,4 +1,4 @@
-export type ListMode = 'my' | 'all' | 'done';
+export type ListMode = 'my' | 'done';
 
 export type ViewCallback =
   | { kind: 'v:list'; mode: ListMode; page: number }
@@ -26,7 +26,7 @@ function parseIntStrict(s: string) {
 }
 
 function parseMode(s: string) {
-  return s === 'my' || s === 'all' || s === 'done' ? s : null;
+  return s === 'my' || s === 'done' ? s : null;
 }
 
 export function parseCallbackData(raw: string): CallbackData | null {
@@ -38,13 +38,13 @@ export function parseCallbackData(raw: string): CallbackData | null {
 
   // v:list:<mode>:<page>
   {
-    const m = s.match(/^v:list:(my|all|done):(\d+)$/);
+    const m = s.match(/^v:list:(my|done):(\d+)$/);
     if (m) return { kind: 'v:list', mode: m[1] as any, page: Number(m[2]) };
   }
 
   // v:add:<mode>:<page>
   {
-    const m = s.match(/^v:add:(my|all|done):(\d+)$/);
+    const m = s.match(/^v:add:(my|done):(\d+)$/);
     if (m) return { kind: 'v:add', mode: m[1] as any, page: Number(m[2]) };
   }
 
@@ -56,7 +56,7 @@ export function parseCallbackData(raw: string): CallbackData | null {
 
   // v:task:<taskNumId>:<mode>:<page>
   {
-    const m = s.match(/^v:task:(\d+):(my|all|done):(\d+)$/);
+    const m = s.match(/^v:task:(\d+):(my|done):(\d+)$/);
     if (m) {
       return {
         kind: 'v:task',
@@ -69,25 +69,25 @@ export function parseCallbackData(raw: string): CallbackData | null {
 
   // t:delask:<taskNumId>:<mode>:<page>
   {
-    const m = s.match(/^t:delask:(\d+):(my|all|done):(\d+)$/);
+    const m = s.match(/^t:delask:(\d+):(my|done):(\d+)$/);
     if (m) return { kind: 't:delask', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
   }
 
   // t:delyes:<taskNumId>:<mode>:<page>
   {
-    const m = s.match(/^t:delyes:(\d+):(my|all|done):(\d+)$/);
+    const m = s.match(/^t:delyes:(\d+):(my|done):(\d+)$/);
     if (m) return { kind: 't:delyes', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
   }
 
   // t:edit:<taskNumId>:<mode>:<page>
   {
-    const m = s.match(/^t:edit:(\d+):(my|all|done):(\d+)$/);
+    const m = s.match(/^t:edit:(\d+):(my|done):(\d+)$/);
     if (m) return { kind: 't:edit', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
   }
 
   // t:(done|reopen):<taskNumId>:<mode>:<page>
   {
-    const m = s.match(/^t:(done|reopen):(\d+):(my|all|done):(\d+)$/);
+    const m = s.match(/^t:(done|reopen):(\d+):(my|done):(\d+)$/);
     if (m) {
       return {
         kind: `t:${m[1]}` as any,
