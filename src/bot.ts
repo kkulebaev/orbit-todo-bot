@@ -312,7 +312,27 @@ bot.on('message:text', async (ctx, next) => {
   });
 
   if (!pending) {
-    await next();
+    // UX: allow adding a task by simply sending a text message (without pressing ➕)
+    // Ask for confirmation to avoid accidental task creation from random chat messages
+    const titleDraft = text.slice(0, 200);
+
+    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+    await prisma.pendingAction.create({
+      data: {
+        kind: PendingActionKind.addTaskDraft,
+        userId: me.id,
+        draftTitle: titleDraft,
+      },
+    });
+
+    const kb = new InlineKeyboard()
+      .text('✅ Добавить', 'v:addDraft:confirm')
+      .text('❌ Не добавлять', 'v:addDraft:cancel');
+
+    await ctx.reply(`Добавить задачу?\n\n📝 ${escapeHtml(titleDraft)}`, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
     return;
   }
 
@@ -355,6 +375,26 @@ bot.on('message:text', async (ctx, next) => {
     const page = pending.panelPage ?? 0;
     const panelMessageId = pending.panelMessageId ?? undefined;
     await showList(ctx, mode, page, panelMessageId);
+    return;
+  }
+
+  if (pending.kind === PendingActionKind.addTaskDraft) {
+    // If user sends another message while draft is pending, treat it as updating the draft
+    const titleDraft = text.slice(0, 200);
+
+    await prisma.pendingAction.update({
+      where: { id: pending.id },
+      data: { draftTitle: titleDraft },
+    });
+
+    const kb = new InlineKeyboard()
+      .text('✅ Добавить', 'v:addDraft:confirm')
+      .text('❌ Не добавлять', 'v:addDraft:cancel');
+
+    await ctx.reply(`Добавить задачу?\n\n📝 ${escapeHtml(titleDraft)}`, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
     return;
   }
 
@@ -434,6 +474,54 @@ bot.callbackQuery(/^v:cancel$/, async (ctx) => {
   const mode = (pending?.panelMode as PendingMode | null) ?? 'my';
   const page = pending?.panelPage ?? 0;
   await showList(ctx, mode, page, messageId);
+});
+
+// --- Quick add draft (message → confirm) ---
+bot.callbackQuery(/^v:addDraft:(confirm|cancel)$/, async (ctx) => {
+  (ctx as any)._matchedCallbackHandled = true;
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {}
+
+  const action = ctx.match[1] as 'confirm' | 'cancel';
+  const me = await upsertUserFromCtx(ctx);
+
+  const pending = await prisma.pendingAction.findFirst({
+    where: { userId: me.id, kind: PendingActionKind.addTaskDraft },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!pending) {
+    await ctx.reply('Черновик задачи не найден 🙃');
+    return;
+  }
+
+  if (action === 'cancel') {
+    await prisma.pendingAction.delete({ where: { id: pending.id } });
+    await ctx.reply('Ок, не добавляю ✅');
+    return;
+  }
+
+  const title = (pending as any).draftTitle?.trim();
+  if (!title) {
+    await prisma.pendingAction.delete({ where: { id: pending.id } });
+    await ctx.reply('Пустой черновик, нечего добавлять 🙃');
+    return;
+  }
+
+  const task = await prisma.task.create({
+    data: {
+      title: title.slice(0, 200),
+      createdById: me.id,
+      assignedToId: me.id,
+    },
+    include: { assignedTo: true },
+  });
+
+  await prisma.pendingAction.delete({ where: { id: pending.id } });
+
+  await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
+  await showList(ctx, 'my', 0);
 });
 
 bot.callbackQuery(/^v:task:(\d+):(my|all|done):(\d+)$/, async (ctx) => {
