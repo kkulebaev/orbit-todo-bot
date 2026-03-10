@@ -22,7 +22,7 @@ export function fmtTaskLine(t: {
   return `${statusEmoji} ${t.title}`;
 }
 
-export type ListMode = 'my' | 'all' | 'done';
+export type ListMode = 'my' | 'done';
 
 export const PAGE_SIZE = 8;
 
@@ -56,7 +56,6 @@ export function kbList(
   kb.row();
 
   kb.text(mode === 'my' ? '👤 Мои ✅' : '👤 Мои', `v:list:my:0`);
-  kb.text(mode === 'all' ? '👥 Все ✅' : '👥 Все', `v:list:all:0`);
   kb.text(mode === 'done' ? '🏁 Готово ✅' : '🏁 Готово', `v:list:done:0`);
 
   return kb;
