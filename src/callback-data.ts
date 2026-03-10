@@ -1,19 +1,21 @@
+export type ListMode = 'my' | 'all' | 'done';
+
 export type ViewCallback =
-  | { kind: 'v:list'; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 'v:add'; mode: 'my' | 'all' | 'done'; page: number }
+  | { kind: 'v:list'; mode: ListMode; page: number }
+  | { kind: 'v:add'; mode: ListMode; page: number }
   | { kind: 'v:cancel' }
   | { kind: 'v:addDraft'; action: 'confirm' | 'cancel' }
-  | { kind: 'v:task'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
+  | { kind: 'v:task'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 'noop' };
 
 export type TaskCallback =
-  | { kind: 't:delask'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:delyes'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:edit'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:done'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:reopen'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:assign'; taskNumId: number; mode: 'my' | 'all' | 'done'; page: number }
-  | { kind: 't:assignTo'; taskNumId: number; toUserNumId: number; mode: 'my' | 'all' | 'done'; page: number };
+  | { kind: 't:delask'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:delyes'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:edit'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:done'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:reopen'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:assign'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:assignTo'; taskNumId: number; toUserNumId: number; mode: ListMode; page: number };
 
 export type CallbackData = ViewCallback | TaskCallback;
 

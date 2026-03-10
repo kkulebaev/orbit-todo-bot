@@ -1,6 +1,4 @@
-import type { CallbackData } from './callback-data.js';
-
-export type ListMode = 'my' | 'all' | 'done';
+import type { CallbackData, ListMode } from './callback-data.js';
 
 export type CtxLike = {
   chat?: { id: number | string };
@@ -16,6 +14,13 @@ export type InlineKeyboardLike = {
   row: () => InlineKeyboardLike;
 };
 
+export type PendingActionLike = {
+  id: string;
+  panelMode?: string | null;
+  panelPage?: number | null;
+  draftTitle?: string | null;
+};
+
 export type DispatchDeps = {
   showList: (ctx: CtxLike, mode: ListMode, page: number, editMessageId?: number) => Promise<void>;
   showTaskDetail: (ctx: CtxLike, taskNumId: number, mode: ListMode, page: number, editMessageId: number) => Promise<void>;
@@ -26,7 +31,7 @@ export type DispatchDeps = {
     pendingAction: {
       deleteMany: (args: { where: { userId: string } }) => Promise<unknown>;
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
-      findFirst: (args: unknown) => Promise<{ id: string; panelMode?: string | null; panelPage?: number | null; draftTitle?: string | null } | null>;
+      findFirst: (args: unknown) => Promise<PendingActionLike | null>;
       delete: (args: { where: { id: string } }) => Promise<unknown>;
     };
     task: {
