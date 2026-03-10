@@ -1,27 +1,43 @@
 import type { CallbackData } from './callback-data.js';
 
-export type DispatchDeps = {
-  showList: (ctx: any, mode: any, page: number, editMessageId?: number) => Promise<void>;
-  showTaskDetail: (ctx: any, taskNumId: number, mode: any, page: number, editMessageId: number) => Promise<void>;
+export type ListMode = 'my' | 'all' | 'done';
 
-  upsertUserFromCtx: (ctx: any) => Promise<{ id: string }>;
+export type CtxLike = {
+  chat?: { id: number | string };
+  callbackQuery?: { message?: { message_id: number } };
+  api: {
+    editMessageText: (...args: any[]) => Promise<unknown>;
+  };
+  reply: (...args: any[]) => Promise<unknown>;
+};
+
+export type InlineKeyboardLike = {
+  text: (text: string, callback_data: string) => InlineKeyboardLike;
+  row: () => InlineKeyboardLike;
+};
+
+export type DispatchDeps = {
+  showList: (ctx: CtxLike, mode: ListMode, page: number, editMessageId?: number) => Promise<void>;
+  showTaskDetail: (ctx: CtxLike, taskNumId: number, mode: ListMode, page: number, editMessageId: number) => Promise<void>;
+
+  upsertUserFromCtx: (ctx: CtxLike) => Promise<{ id: string }>;
 
   prisma: {
     pendingAction: {
-      deleteMany: (args: any) => Promise<unknown>;
-      create: (args: any) => Promise<unknown>;
-      findFirst: (args: any) => Promise<any>;
-      delete: (args: any) => Promise<unknown>;
+      deleteMany: (args: { where: { userId: string } }) => Promise<unknown>;
+      create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
+      findFirst: (args: unknown) => Promise<{ id: string; panelMode?: string | null; panelPage?: number | null; draftTitle?: string | null } | null>;
+      delete: (args: { where: { id: string } }) => Promise<unknown>;
     };
     task: {
-      delete: (args: any) => Promise<unknown>;
-      findUnique: (args: any) => Promise<any>;
-      update: (args: any) => Promise<any>;
-      create: (args: any) => Promise<any>;
+      delete: (args: { where: { numId: number } }) => Promise<unknown>;
+      findUnique: (args: unknown) => Promise<{ id: string } | null>;
+      update: (args: unknown) => Promise<{ numId: number }>;
+      create: (args: unknown) => Promise<unknown>;
     };
     user: {
-      findMany: (args: any) => Promise<any[]>;
-      findUnique: (args: any) => Promise<any>;
+      findMany: (args: unknown) => Promise<Array<{ numId: number; username?: string | null; firstName?: string | null }>>;
+      findUnique: (args: unknown) => Promise<{ id: string } | null>;
     };
   };
 
@@ -31,9 +47,9 @@ export type DispatchDeps = {
     editTitle: string;
   };
 
-  InlineKeyboard: new () => any;
-  fmtUser: (u: any) => string;
-  fmtTaskLine: (t: any) => string;
+  InlineKeyboard: new () => InlineKeyboardLike;
+  fmtUser: (u: { username?: string | null; firstName?: string | null }) => string;
+  fmtTaskLine: (t: unknown) => string;
 };
 
 /**
@@ -42,7 +58,7 @@ export type DispatchDeps = {
  * This function is intentionally DI-friendly so we can unit-test routing
  * without BOT_TOKEN/DATABASE_URL or real Prisma.
  */
-export async function dispatchCallbackData(ctx: any, parsed: CallbackData, deps: DispatchDeps) {
+export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, deps: DispatchDeps) {
   const messageId: number | undefined = ctx.callbackQuery?.message?.message_id;
 
   switch (parsed.kind) {
@@ -82,7 +98,7 @@ export async function dispatchCallbackData(ctx: any, parsed: CallbackData, deps:
       const pending = await deps.prisma.pendingAction.findFirst({ where: { userId: me.id }, orderBy: { createdAt: 'desc' } });
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
-      const mode = (pending?.panelMode as any) ?? 'my';
+      const mode = (pending?.panelMode as ListMode | null | undefined) ?? 'my';
       const page = pending?.panelPage ?? 0;
       await deps.showList(ctx, mode, page, messageId);
       return;
