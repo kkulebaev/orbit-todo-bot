@@ -8,29 +8,9 @@ describe('bot-logic', () => {
       expect(parseAddCommandText('   ')).toBeNull();
     });
 
-    it('parses self add', () => {
+    it('parses add as self (assignment disabled)', () => {
       expect(parseAddCommandText('купить молоко')).toEqual({ kind: 'self', title: 'купить молоко' });
-    });
-
-    it('parses assign add', () => {
-      expect(parseAddCommandText('@kkulebaev купить молоко')).toEqual({
-        kind: 'assign',
-        username: 'kkulebaev',
-        title: 'купить молоко',
-      });
-    });
-
-    it('does not parse too-short usernames as assign', () => {
-      // Telegram usernames must be 5+ chars; this should fall back to self.
-      expect(parseAddCommandText('@abc task')).toEqual({ kind: 'self', title: '@abc task' });
-    });
-
-    it('trims title for assign case', () => {
-      expect(parseAddCommandText('@username   task   ')).toEqual({
-        kind: 'assign',
-        username: 'username',
-        title: 'task',
-      });
+      expect(parseAddCommandText('@kkulebaev купить молоко')).toEqual({ kind: 'self', title: '@kkulebaev купить молоко' });
     });
   });
 
