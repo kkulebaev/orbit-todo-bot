@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Context, InlineKeyboard } from 'grammy';
 import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
 import { bot } from './bot-instance.js';
-import { escapeHtml, fmtTaskLine, fmtUser, kbList, PAGE_SIZE, type ListMode } from './utils.js';
+import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 
@@ -95,6 +95,10 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
         reply_markup,
       });
     } catch (e) {
+      // Бывает, что мы повторно рендерим тот же текст/клавиатуру
+      // (Telegram в этом случае кидает 400: message is not modified)
+      if (isTelegramMessageNotModifiedError(e)) return;
+
       // Fallback: if message can't be edited (or parse error), just send a fresh message.
       console.error('editMessageText failed, falling back to reply()', e);
       await ctx.reply(text, { parse_mode: 'HTML', reply_markup });
@@ -124,10 +128,15 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 
   if (!task) {
     // Don't rely on callback popups (we may have already answered the callback).
-    await ctx.api.editMessageText(ctx.chat!.id, editMessageId, '🙃 Задача не найдена.', {
-      parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('⬅️ Назад', `v:list:${mode}:${page}`),
-    });
+    try {
+      await ctx.api.editMessageText(ctx.chat!.id, editMessageId, '🙃 Задача не найдена.', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('⬅️ Назад', `v:list:${mode}:${page}`),
+      });
+    } catch (e) {
+      if (isTelegramMessageNotModifiedError(e)) return;
+      throw e;
+    }
     return;
   }
 
@@ -140,10 +149,15 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
     `<b>${escapeHtml(task.title)}</b>\n\n` +
     `${statusLine}`;
 
-  await ctx.api.editMessageText(ctx.chat!.id, editMessageId, text, {
-    parse_mode: 'HTML',
-    reply_markup: kbTaskDetail(task.numId, task.status, mode, page),
-  });
+  try {
+    await ctx.api.editMessageText(ctx.chat!.id, editMessageId, text, {
+      parse_mode: 'HTML',
+      reply_markup: kbTaskDetail(task.numId, task.status, mode, page),
+    });
+  } catch (e) {
+    if (isTelegramMessageNotModifiedError(e)) return;
+    throw e;
+  }
 }
 
 bot.command('start', async (ctx) => {

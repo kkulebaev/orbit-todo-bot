@@ -1,4 +1,5 @@
 import type { CallbackData, ListMode } from './callback-data.js';
+import { isTelegramMessageNotModifiedError } from './utils.js';
 
 export type CtxLike = {
   chat?: { id: number | string };
@@ -91,10 +92,15 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       });
 
       const kb = new deps.InlineKeyboard().text('❌ Отмена', 'v:cancel');
-      await ctx.api.editMessageText(ctx.chat!.id, messageId, '✍️ Напиши текст задачи одним сообщением.', {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-      });
+      try {
+        await ctx.api.editMessageText(ctx.chat!.id, messageId, '✍️ Напиши текст задачи одним сообщением.', {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
+      } catch (e) {
+        if (isTelegramMessageNotModifiedError(e)) return;
+        throw e;
+      }
       return;
     }
 
@@ -159,10 +165,15 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
         .row()
         .text('❌ Отмена', `v:task:${parsed.taskNumId}:${parsed.mode}:${parsed.page}`);
 
-      await ctx.api.editMessageText(ctx.chat!.id, messageId, '🗑 Удалить задачу? Это действие нельзя отменить.', {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-      });
+      try {
+        await ctx.api.editMessageText(ctx.chat!.id, messageId, '🗑 Удалить задачу? Это действие нельзя отменить.', {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
+      } catch (e) {
+        if (isTelegramMessageNotModifiedError(e)) return;
+        throw e;
+      }
       return;
     }
 
