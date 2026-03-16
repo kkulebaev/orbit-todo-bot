@@ -26,6 +26,11 @@ export type ListMode = 'my' | 'done';
 
 export const PAGE_SIZE = 8;
 
+export function isTelegramMessageNotModifiedError(e: unknown) {
+  const msg = String((e as any)?.description ?? (e as any)?.message ?? '').toLowerCase();
+  return msg.includes('message is not modified');
+}
+
 export function kbList(
   mode: ListMode,
   page: number,
