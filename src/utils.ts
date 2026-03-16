@@ -60,8 +60,8 @@ export function kbList(
   kb.text(nextEnabled ? '➡️' : '·', nextEnabled ? `v:list:${mode}:${page + 1}` : 'noop');
   kb.row();
 
-  kb.text(mode === 'my' ? '👤 Мои ✅' : '👤 Мои', `v:list:my:0`);
-  kb.text(mode === 'done' ? '🏁 Готово ✅' : '🏁 Готово', `v:list:done:0`);
+  kb.text(mode === 'my' ? '⏳ В работе ✅' : '⏳ В работе', `v:list:my:0`);
+  kb.text(mode === 'done' ? '🗂️ Выполненные ✅' : '🗂️ Выполненные', `v:list:done:0`);
 
   return kb;
 }
