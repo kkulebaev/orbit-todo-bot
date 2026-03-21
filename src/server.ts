@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express, { type Request, type Response } from 'express';
+import express, {type Request, type Response} from 'express';
 import { pathToFileURL } from 'node:url';
 
 export type BotLike = {
@@ -52,11 +52,6 @@ export function createApp(bot: Pick<BotLike, 'handleUpdate'>) {
 
 export async function startServer(bot: BotLike) {
   const PORT = Number(process.env.PORT ?? 3000);
-  const PUBLIC_URL = process.env.PUBLIC_URL;
-
-  if (!PUBLIC_URL) {
-    throw new Error('Missing PUBLIC_URL (e.g. https://orbit-todo-bot.onrender.com)');
-  }
 
   const app = createApp(bot);
 
@@ -70,15 +65,6 @@ export async function startServer(bot: BotLike) {
       console.log('Bot initialized');
     } catch (e) {
       console.error('Failed to init bot', e);
-    }
-
-    // Register webhook on startup
-    const hookUrl = `${PUBLIC_URL.replace(/\/$/, '')}/telegram/webhook`;
-    try {
-      await bot.api.setWebhook(hookUrl);
-      console.log('Webhook set to', hookUrl);
-    } catch (e) {
-      console.error('Failed to set webhook', e);
     }
   });
 }

@@ -58,8 +58,6 @@ A small, private Telegram TODO bot for personal use, families, and small teams.
 Required:
 - `BOT_TOKEN` — Telegram Bot token (BotFather)
 - `DATABASE_URL` — Postgres connection string
-- `PUBLIC_URL` — public **https** URL of your deployed service
-  - used to register webhook: `${PUBLIC_URL}/telegram/webhook`
 
 Optional:
 - `PORT` — server port (default `3000`)
@@ -85,8 +83,6 @@ npm run dev
 Server:
 - `POST /telegram/webhook`
 - `GET /healthz` → `ok`
-
-> For local webhook testing you need a tunnel (ngrok/cloudflared) and must set `PUBLIC_URL` to the tunnel https URL.
 
 ---
 
@@ -121,7 +117,6 @@ npm run typecheck
 3) Set environment variables:
    - `BOT_TOKEN`
    - `DATABASE_URL`
-   - `PUBLIC_URL`
 4) Build command:
 
 ```bash
