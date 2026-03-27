@@ -42,14 +42,24 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
 
   if (mode === 'my') where.assignedToId = viewer.id;
 
+  const orderBy = mode === 'done'
+    ? [
+        // UX: newest completed first
+        { doneAt: 'desc' as const },
+        // Fallback for tasks without doneAt (should be rare)
+        { createdAt: 'desc' as const },
+      ]
+    : [
+        // UX: newest created first
+        { createdAt: 'desc' as const },
+      ];
+
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      // UX: show newer tasks first
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy,
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
-
     }),
     prisma.task.count({ where }),
   ]);
