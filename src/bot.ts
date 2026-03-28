@@ -40,9 +40,10 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   if (mode === 'done') where.status = 'done';
   else where.status = 'open';
 
-  if (mode === 'my') where.assignedToId = viewer.id;
+  // Privacy: lists should be scoped to the viewer
+  where.assignedToId = viewer.id;
 
-  const orderBy = mode === 'done'
+  const taskOrderBy = mode === 'done'
     ? [
         // UX: newest completed first
         { doneAt: 'desc' as const },
@@ -57,7 +58,7 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      orderBy,
+      orderBy: taskOrderBy,
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -421,3 +422,5 @@ export async function diagnostics() {
     console.error('DB check: FAILED', e);
   }
 }
+
+// noop: trigger CI
