@@ -5,6 +5,7 @@ import { bot } from './bot-instance.js';
 import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
+import { createCallbackDeduper } from './callback-deduper.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -359,7 +360,18 @@ bot.command('done', async (ctx) => {
 
 // --- Callback dispatcher (parseCallbackData) ---
 
+const callbackDeduper = createCallbackDeduper({ ttlMs: 60_000, maxSize: 10_000 });
+
 bot.on('callback_query:data', async (ctx, next) => {
+  const callbackQueryId: string | undefined = (ctx.callbackQuery as any)?.id;
+  if (callbackQueryId && callbackDeduper.isDuplicate(callbackQueryId)) {
+    try {
+      // Acknowledge duplicate clicks/updates to stop Telegram spinner.
+      await ctx.answerCallbackQuery();
+    } catch {}
+    return;
+  }
+
   const parsed = parseCallbackData(ctx.callbackQuery.data);
   if (!parsed) return next();
 
