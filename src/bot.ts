@@ -5,6 +5,7 @@ import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kb
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
+import { formatSmart } from './date-format.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -162,10 +163,15 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
   // If you want stricter privacy later, re-enable creator/assignee check.
 
   const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
+  const createdLine = `Создано: ${formatSmart(task.createdAt)}`;
+  const doneLine = task.status === 'done' && task.doneAt
+    ? `\nЗакрыто: ${formatSmart(task.doneAt)}`
+    : '';
   const text =
     `📝 <b>Задача</b>\n\n` +
     `<b>${escapeHtml(task.title)}</b>\n\n` +
-    `${statusLine}`;
+    `${statusLine}\n` +
+    `${createdLine}${doneLine}`;
 
   try {
     await ctx.api.editMessageText(ctx.chat!.id, editMessageId, text, {
