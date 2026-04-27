@@ -89,14 +89,25 @@ describe('callback-dispatcher routing', () => {
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
   });
 
-  it('routes t:done to task.update then returns to my list', async () => {
+  it('routes t:done to task.update then returns to the same list+page', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
 
-    await dispatchCallbackData(ctx, { kind: 't:done', taskNumId: 7, mode: 'all', page: 1 }, deps as any);
+    await dispatchCallbackData(ctx, { kind: 't:done', taskNumId: 7, mode: 'my', page: 2 }, deps as any);
 
     expect(deps.prisma.task.update).toHaveBeenCalled();
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2, 123);
+    expect(deps.showTaskDetail).not.toHaveBeenCalled();
+  });
+
+  it('routes t:reopen to task.update then returns to the same list+page', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+
+    await dispatchCallbackData(ctx, { kind: 't:reopen', taskNumId: 7, mode: 'done', page: 1 }, deps as any);
+
+    expect(deps.prisma.task.update).toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'done', 1, 123);
     expect(deps.showTaskDetail).not.toHaveBeenCalled();
   });
 

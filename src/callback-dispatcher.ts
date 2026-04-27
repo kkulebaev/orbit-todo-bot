@@ -226,14 +226,7 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
         include: { assignedTo: true, createdBy: true },
       });
 
-      // UX: after marking a task as done, return user to "Мои задачи"
-      if (isDone) {
-        await deps.showList(ctx, 'my', 0, messageId);
-        return;
-      }
-
-      // For reopen keep user on the task screen
-      await deps.showTaskDetail(ctx, parsed.taskNumId, parsed.mode, parsed.page, messageId);
+      await deps.showList(ctx, parsed.mode, parsed.page, messageId);
       return;
     }
 

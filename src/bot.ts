@@ -71,7 +71,15 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
 
 async function showList(ctx: Context, mode: ListMode, page: number, editMessageId?: number) {
   const viewer = await upsertUserFromCtx(ctx);
-  const { tasks, total } = await getTasksForMode(mode, viewer, page);
+  let { tasks, total } = await getTasksForMode(mode, viewer, page);
+
+  // If the requested page is past the last non-empty page (e.g., the last task on it
+  // was just completed/deleted), clamp back to the last page that still has data.
+  const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  if (page > maxPage) {
+    page = maxPage;
+    ({ tasks } = await getTasksForMode(mode, viewer, page));
+  }
 
   const title = mode === 'my'
     ? '🪐 <b>Orbit · Мои задачи</b>'
@@ -172,6 +180,8 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 
 bot.command('start', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
+  const me = await upsertUserFromCtx(ctx);
+  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
   await showList(ctx, 'my', 0);
 });
 
@@ -286,8 +296,6 @@ bot.on('message:text', async (ctx, next) => {
     await prisma.task.update({ where: { id: pending.taskId }, data: { title: newTitle } });
     await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
-    await ctx.reply(`✏️ Обновил задачу:\n\n${fmtTaskLine({ ...task, title: newTitle })}`);
-
     const mode = (pending.panelMode as PendingMode | null) ?? 'my';
     const page = pending.panelPage ?? 0;
     const panelMessageId = pending.panelMessageId ?? undefined;
@@ -340,11 +348,15 @@ bot.on('message:text', async (ctx, next) => {
 
 bot.command('my', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
+  const me = await upsertUserFromCtx(ctx);
+  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
   await showList(ctx, 'my', 0);
 });
 
 bot.command('done', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
+  const me = await upsertUserFromCtx(ctx);
+  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
   await showList(ctx, 'done', 0);
 });
 
