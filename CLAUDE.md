@@ -54,7 +54,7 @@ Indexes on `(status, assignedToId)` and `(status, createdById)` back the list qu
 ## Conventions
 
 - ESM-only (`"type": "module"` in package.json). Always import with `.js` suffixes in TS source — required by Node ESM resolution.
-- Node 22 (`.nvmrc`, `engines.node`).
+- Node 24 (`.nvmrc`, `engines.node`).
 - Tests live next to sources as `*.test.ts`; `tsconfig.json` excludes them from `tsc` output, and `vitest.config.ts` includes only them.
 - Logs must not include full Telegram update bodies (truncate to 120 chars, see `server.ts`). Don't add verbose logging that could leak user text.
 - Privacy: list queries are scoped to the viewer (`assignedToId = viewer.id`) — preserve this when adding new list queries.

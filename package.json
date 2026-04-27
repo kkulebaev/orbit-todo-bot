@@ -18,7 +18,7 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",

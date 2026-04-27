@@ -67,7 +67,7 @@ Optional:
 ## Local development
 
 ### Requirements
-- Node.js **22** (see `.nvmrc`)
+- Node.js **24** (see `.nvmrc`)
 - A reachable Postgres instance (e.g. Railway Postgres) — set `DATABASE_URL` in `.env`
 
 ### Start
