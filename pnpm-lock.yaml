@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@prisma/client':
         specifier: ^6.19.1
-        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+        version: 6.19.3(prisma@6.19.3(typescript@6.0.3))(typescript@6.0.3)
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -32,7 +32,7 @@ importers:
         version: 4.1.5(vitest@4.1.5)
       prisma:
         specifier: ^6.19.1
-        version: 6.19.3(typescript@5.9.3)
+        version: 6.19.3(typescript@6.0.3)
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
@@ -40,8 +40,8 @@ importers:
         specifier: ^4.21.0
         version: 4.21.0
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vitest:
         specifier: ^4.0.18
         version: 4.1.5(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0))
@@ -1149,8 +1149,8 @@ packages:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
     engines: {node: '>= 0.6'}
 
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1400,10 +1400,10 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
-  '@prisma/client@6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)':
+  '@prisma/client@6.19.3(prisma@6.19.3(typescript@6.0.3))(typescript@6.0.3)':
     optionalDependencies:
-      prisma: 6.19.3(typescript@5.9.3)
-      typescript: 5.9.3
+      prisma: 6.19.3(typescript@6.0.3)
+      typescript: 6.0.3
 
   '@prisma/config@6.19.3':
     dependencies:
@@ -2120,12 +2120,12 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  prisma@6.19.3(typescript@5.9.3):
+  prisma@6.19.3(typescript@6.0.3):
     dependencies:
       '@prisma/config': 6.19.3
       '@prisma/engines': 6.19.3
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - magicast
 
@@ -2315,7 +2315,7 @@ snapshots:
       media-typer: 1.1.0
       mime-types: 3.0.2
 
-  typescript@5.9.3: {}
+  typescript@6.0.3: {}
 
   undici-types@7.19.2: {}
 
