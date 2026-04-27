@@ -16,16 +16,31 @@ const timeFmt = new Intl.DateTimeFormat('ru-RU', {
 
 const absoluteFmt = new Intl.DateTimeFormat('ru-RU', {
   timeZone: BOT_TZ,
-  day: '2-digit',
-  month: '2-digit',
+  day: 'numeric',
+  month: 'long',
   year: 'numeric',
 });
 
 const dayMonthFmt = new Intl.DateTimeFormat('ru-RU', {
   timeZone: BOT_TZ,
-  day: '2-digit',
-  month: '2-digit',
+  day: 'numeric',
+  month: 'long',
 });
+
+function partsToString(parts: Intl.DateTimeFormatPart[]): string {
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const year = parts.find((p) => p.type === 'year')?.value;
+  return year ? `${day} ${month} ${year}` : `${day} ${month}`;
+}
+
+function formatAbsolute(d: Date): string {
+  return partsToString(absoluteFmt.formatToParts(d));
+}
+
+function formatDayMonth(d: Date): string {
+  return partsToString(dayMonthFmt.formatToParts(d));
+}
 
 const yearFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: BOT_TZ,
@@ -41,9 +56,7 @@ function yearInTZ(d: Date): number {
 }
 
 function absoluteInTZ(d: Date, now: Date): string {
-  return yearInTZ(d) === yearInTZ(now)
-    ? dayMonthFmt.format(d)
-    : absoluteFmt.format(d);
+  return yearInTZ(d) === yearInTZ(now) ? formatDayMonth(d) : formatAbsolute(d);
 }
 
 function diffDaysInTZ(later: Date, earlier: Date): number {
@@ -66,7 +79,7 @@ export function formatSmart(date: Date, now: Date = new Date()): string {
   if (diff <= 0) return `сегодня в ${timeFmt.format(date)}`;
   if (diff === 1) return `вчера в ${timeFmt.format(date)}`;
   if (diff <= 7) return `${diff} ${dayWord(diff)} назад`;
-  return absoluteFmt.format(date);
+  return formatAbsolute(date);
 }
 
 export function formatDueSmart(

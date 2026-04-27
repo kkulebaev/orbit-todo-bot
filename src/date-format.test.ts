@@ -32,9 +32,9 @@ describe('formatSmart', () => {
     expect(formatSmart(new Date('2026-04-20T12:00:00Z'), now)).toBe('7 дней назад');
   });
 
-  it('returns "DD.MM.YYYY" for >7 days back', () => {
-    expect(formatSmart(new Date('2026-04-19T12:00:00Z'), now)).toBe('19.04.2026');
-    expect(formatSmart(new Date('2025-12-31T12:00:00Z'), now)).toBe('31.12.2025');
+  it('returns "D MMMM YYYY" for >7 days back', () => {
+    expect(formatSmart(new Date('2026-04-19T12:00:00Z'), now)).toBe('19 апреля 2026');
+    expect(formatSmart(new Date('2025-12-31T12:00:00Z'), now)).toBe('31 декабря 2025');
   });
 
   it('clamps a future-or-equal timestamp to "сегодня"', () => {
@@ -50,12 +50,12 @@ describe('formatDueSmart', () => {
     it('day-only: yesterday and earlier MSK days are overdue', () => {
       // 2026-04-26 00:00 MSK = 2026-04-25 21:00Z
       expect(formatDueSmart(new Date('2026-04-25T21:00:00Z'), false, now)).toEqual({
-        text: 'просрочено · 26.04',
+        text: 'просрочено · 26 апреля',
         overdue: true,
       });
       // Other year
       expect(formatDueSmart(new Date('2025-11-30T21:00:00Z'), false, now)).toEqual({
-        text: 'просрочено · 01.12.2025',
+        text: 'просрочено · 1 декабря 2025',
         overdue: true,
       });
     });
@@ -71,7 +71,7 @@ describe('formatDueSmart', () => {
     it('day+time: timestamp before now is overdue, even on the same day', () => {
       // 2026-04-27 12:00 MSK (= 09:00Z), now is 15:00 MSK → overdue
       expect(formatDueSmart(new Date('2026-04-27T09:00:00Z'), true, now)).toEqual({
-        text: 'просрочено · 27.04',
+        text: 'просрочено · 27 апреля',
         overdue: true,
       });
     });
@@ -139,10 +139,10 @@ describe('formatDueSmart', () => {
   });
 
   describe('absolute > 7 days', () => {
-    it('current year shows DD.MM', () => {
+    it('current year shows "D MMMM"', () => {
       // +8 days, 2026-05-05 00:00 MSK = 2026-05-04 21:00Z
       expect(formatDueSmart(new Date('2026-05-04T21:00:00Z'), false, now)).toEqual({
-        text: '05.05',
+        text: '5 мая',
         overdue: false,
       });
     });
@@ -150,15 +150,15 @@ describe('formatDueSmart', () => {
     it('current year with time', () => {
       // +30 days at 09:00 MSK
       expect(formatDueSmart(new Date('2026-05-27T06:00:00Z'), true, now)).toEqual({
-        text: '27.05 в 09:00',
+        text: '27 мая в 09:00',
         overdue: false,
       });
     });
 
-    it('other year shows DD.MM.YYYY', () => {
+    it('other year shows "D MMMM YYYY"', () => {
       // 2027-01-15 00:00 MSK = 2027-01-14 21:00Z
       expect(formatDueSmart(new Date('2027-01-14T21:00:00Z'), false, now)).toEqual({
-        text: '15.01.2027',
+        text: '15 января 2027',
         overdue: false,
       });
     });
@@ -166,7 +166,7 @@ describe('formatDueSmart', () => {
     it('other year with time', () => {
       // 2027-01-15 09:00 MSK = 2027-01-15 06:00Z
       expect(formatDueSmart(new Date('2027-01-15T06:00:00Z'), true, now)).toEqual({
-        text: '15.01.2027 в 09:00',
+        text: '15 января 2027 в 09:00',
         overdue: false,
       });
     });
