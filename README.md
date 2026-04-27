@@ -68,14 +68,15 @@ Optional:
 
 ### Requirements
 - Node.js **24** (see `.nvmrc`)
+- pnpm **10** (enable via `corepack enable`; the version is pinned in `package.json#packageManager`)
 - A reachable Postgres instance (e.g. Railway Postgres) — set `DATABASE_URL` in `.env`
 
 ### Start
 
 ```bash
-npm ci
+pnpm install --frozen-lockfile
 
-npm run dev
+pnpm dev
 ```
 
 Server:
@@ -91,8 +92,8 @@ This repo uses Prisma migrations.
 Typical flow:
 
 ```bash
-npx prisma generate
-npx prisma migrate deploy
+pnpm exec prisma generate
+pnpm exec prisma migrate deploy
 ```
 
 ---
@@ -100,8 +101,8 @@ npx prisma migrate deploy
 ## Tests
 
 ```bash
-npm test
-npm run typecheck
+pnpm test
+pnpm typecheck
 ```
 
 ---
@@ -116,7 +117,7 @@ npm run typecheck
    - `BOT_TOKEN`
    - `DATABASE_URL`
 
-The image runs `npx prisma migrate deploy && node dist/server.js` on start.
+The image runs `pnpm exec prisma migrate deploy && node dist/server.js` on start.
 
 After the service is up, register the Telegram webhook (one-time).
 

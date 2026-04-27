@@ -4,19 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- `npm run dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`, registers handlers, but does NOT start the webhook server; useful for handler-only iteration).
-- `npm start` — run the compiled webhook server (`node dist/server.js`); requires `npm run build` first.
-- `npm run build` — TypeScript compile to `dist/` (`tsc -p tsconfig.json`).
-- `npm run typecheck` — type-check without emit.
-- `npm test` — run Vitest once. `npm run test:watch` for watch mode.
-- Run a single test file: `npx vitest run src/callback-data.test.ts`. Filter by name: `npx vitest run -t "parses v:list"`.
-- `npm run prisma:generate` / `npm run prisma:migrate` — Prisma client generation and `migrate deploy`.
+This project uses **pnpm** (version pinned via `package.json#packageManager`). Enable via `corepack enable` if needed.
+
+- `pnpm dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`, registers handlers, but does NOT start the webhook server; useful for handler-only iteration).
+- `pnpm start` — run the compiled webhook server (`node dist/server.js`); requires `pnpm build` first.
+- `pnpm build` — TypeScript compile to `dist/` (`tsc -p tsconfig.json`).
+- `pnpm typecheck` — type-check without emit.
+- `pnpm test` — run Vitest once. `pnpm test:watch` for watch mode.
+- Run a single test file: `pnpm exec vitest run src/callback-data.test.ts`. Filter by name: `pnpm exec vitest run -t "parses v:list"`.
+- `pnpm prisma:generate` / `pnpm prisma:migrate` — Prisma client generation and `migrate deploy`.
 - `Dockerfile` (multi-stage) builds the production image; Railway uses it for deploys. There is no local Postgres setup — point `DATABASE_URL` at a remote DB (e.g. Railway Postgres) for local dev.
 
 ## Runtime entry points
 
 - `src/server.ts` is the production entry. When `import.meta.url` matches `process.argv[1]`, it dynamically imports `./bot.js` (registering all grammY handlers as a side-effect), then `./bot-instance.js`, and starts Express on `0.0.0.0:$PORT`. Telegram webhook is set externally (the README mentions it's registered after deploy; the code itself only exposes `bot.api.setWebhook`).
-- `src/bot.ts` is the dev entry (`npm run dev`) and the side-effectful module that wires every handler onto the shared `bot` from `bot-instance.ts`. Importing `bot.ts` mutates the singleton; do not import it from tests.
+- `src/bot.ts` is the dev entry (`pnpm dev`) and the side-effectful module that wires every handler onto the shared `bot` from `bot-instance.ts`. Importing `bot.ts` mutates the singleton; do not import it from tests.
 - `src/bot-instance.ts` instantiates the grammY `Bot` once. Both `bot.ts` and `server.ts` consume this same instance — keep instantiation here so handlers and `handleUpdate` share state.
 
 ## Architecture
