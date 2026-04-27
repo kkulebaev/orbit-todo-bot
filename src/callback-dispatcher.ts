@@ -59,9 +59,24 @@ export type DispatchDeps = {
   fmtTaskLine: (t: unknown) => string;
 };
 
+async function editOrReply(ctx: CtxLike, messageId: number | undefined, text: string) {
+  if (messageId) {
+    try {
+      await ctx.api.editMessageText(ctx.chat!.id, messageId, text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [] },
+      });
+      return;
+    } catch (e) {
+      if (isTelegramMessageNotModifiedError(e)) return;
+    }
+  }
+  await ctx.reply(text, { parse_mode: 'HTML' });
+}
+
 /**
  * Handles parsed callback_data routing.
- * 
+ *
  * This function is intentionally DI-friendly so we can unit-test routing
  * without BOT_TOKEN/DATABASE_URL or real Prisma.
  */
@@ -124,20 +139,20 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       });
 
       if (!pending) {
-        await ctx.reply('Черновик задачи не найден 🙃');
+        await editOrReply(ctx, messageId, 'Черновик задачи не найден 🙃');
         return;
       }
 
       if (parsed.action === 'cancel') {
         await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
-        await ctx.reply('Ок, не добавляю ✅');
+        await editOrReply(ctx, messageId, 'Ок, не добавляю ✅');
         return;
       }
 
       const title = String(pending.draftTitle ?? '').trim();
       if (!title) {
         await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
-        await ctx.reply('Пустой черновик, нечего добавлять 🙃');
+        await editOrReply(ctx, messageId, 'Пустой черновик, нечего добавлять 🙃');
         return;
       }
 
@@ -147,8 +162,7 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       });
 
       await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
-      await ctx.reply(`✅ Создал задачу!\n\n${deps.fmtTaskLine(task)}`);
-      await deps.showList(ctx, 'my', 0);
+      await editOrReply(ctx, messageId, `✅ Создал задачу!\n\n${deps.fmtTaskLine(task)}`);
       return;
     }
 
