@@ -68,14 +68,12 @@ Optional:
 
 ### Requirements
 - Node.js **22** (see `.nvmrc`)
-- Docker (for local Postgres)
+- A reachable Postgres instance (e.g. Railway Postgres) — set `DATABASE_URL` in `.env`
 
-### Start Postgres + app
+### Start
 
 ```bash
 npm ci
-
-docker compose up -d
 
 npm run dev
 ```
@@ -113,23 +111,14 @@ npm run typecheck
 ### Railway (recommended)
 
 1) Create a **PostgreSQL** database (Railway Postgres)
-2) Deploy this repo as a service
+2) Deploy this repo as a service — Railway picks up the `Dockerfile` automatically
 3) Set environment variables:
    - `BOT_TOKEN`
    - `DATABASE_URL`
-4) Build command:
 
-```bash
-npm ci && npm run build && npx prisma generate
-```
+The image runs `npx prisma migrate deploy && node dist/server.js` on start.
 
-5) Start command:
-
-```bash
-npx prisma migrate deploy && npm start
-```
-
-After the service is up, it will register the Telegram webhook automatically.
+After the service is up, register the Telegram webhook (one-time).
 
 ---
 

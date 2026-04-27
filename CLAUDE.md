@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run typecheck` — type-check without emit.
 - `npm test` — run Vitest once. `npm run test:watch` for watch mode.
 - Run a single test file: `npx vitest run src/callback-data.test.ts`. Filter by name: `npx vitest run -t "parses v:list"`.
-- `npm run prisma:generate` / `npm run prisma:migrate` — Prisma client generation and `migrate deploy`. For local schema iteration without migrations, `docker-compose.yml` uses `prisma db push`.
-- Local Postgres: `docker compose up -d` (starts only `db` service in normal local dev; the `bot` service is provided for full-container runs).
+- `npm run prisma:generate` / `npm run prisma:migrate` — Prisma client generation and `migrate deploy`.
+- `Dockerfile` (multi-stage) builds the production image; Railway uses it for deploys. There is no local Postgres setup — point `DATABASE_URL` at a remote DB (e.g. Railway Postgres) for local dev.
 
 ## Runtime entry points
 
