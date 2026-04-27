@@ -5,7 +5,8 @@ import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kb
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
-import { formatSmart } from './date-format.js';
+import { formatDueSmart, formatSmart } from './date-format.js';
+import { parseDueDateInput } from './bot-logic.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -35,6 +36,12 @@ async function upsertUserFromCtx(ctx: Context) {
 }
 
 type PendingMode = 'my' | 'done';
+
+function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date = new Date()): string {
+  if (!t.dueAt) return '';
+  const { text, overdue } = formatDueSmart(t.dueAt, t.dueHasTime, now);
+  return ` · ${overdue ? '⚠️' : '⏰'} ${text}`;
+}
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
   const where: any = {};
@@ -94,10 +101,12 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
       ? 'Пока нет выполненных задач.'
       : 'Пока нет задач. Можно:\n• нажать <b>➕ Добавить</b> ниже\n• или просто отправить текст задачи сообщением\n\nПереключаться между списками — кнопками <b>⏳ В работе</b> / <b>🗂️ Выполненные</b> внизу.';
   } else {
+    const renderedAt = new Date();
     body = tasks
       .map((t, idx) => {
         const n = page * PAGE_SIZE + idx + 1;
-        return `<b>${n}.</b> ${escapeHtml(truncate(t.title))}`;
+        const due = mode === 'my' ? fmtDueSuffix(t, renderedAt) : '';
+        return `<b>${n}.</b> ${escapeHtml(truncate(t.title))}${due}`;
       })
       .join('\n');
 
@@ -132,6 +141,10 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
   if (status === 'open') kb.text('✅ Готово', `t:done:${taskNumId}:${mode}:${page}`);
   else kb.text('🔁 Вернуть', `t:reopen:${taskNumId}:${mode}:${page}`);
   kb.text('📝 Изменить', `t:edit:${taskNumId}:${mode}:${page}`);
+  if (status === 'open') {
+    kb.row();
+    kb.text('📅 Срок', `t:setDue:${taskNumId}:${mode}:${page}`);
+  }
   kb.row();
   kb.text('🗑 Удалить', `t:delask:${taskNumId}:${mode}:${page}`);
   kb.text('⬅️ Назад', `v:list:${mode}:${page}`);
@@ -164,6 +177,9 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 
   const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
   const createdLine = `Создано: ${formatSmart(task.createdAt)}`;
+  const dueLine = task.dueAt
+    ? `\nСрок: ${formatDueSmart(task.dueAt, task.dueHasTime).text}`
+    : '';
   const doneLine = task.status === 'done' && task.doneAt
     ? `\nЗакрыто: ${formatSmart(task.doneAt)}`
     : '';
@@ -171,7 +187,7 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
     `📝 <b>Задача</b>\n\n` +
     `<b>${escapeHtml(task.title)}</b>\n\n` +
     `${statusLine}\n` +
-    `${createdLine}${doneLine}`;
+    `${createdLine}${dueLine}${doneLine}`;
 
   try {
     await ctx.api.editMessageText(ctx.chat!.id, editMessageId, text, {
@@ -300,6 +316,40 @@ bot.on('message:text', async (ctx, next) => {
     }
 
     await prisma.task.update({ where: { id: pending.taskId }, data: { title: newTitle } });
+    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+
+    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
+    const page = pending.panelPage ?? 0;
+    const panelMessageId = pending.panelMessageId ?? undefined;
+    await showList(ctx, mode, page, panelMessageId);
+    return;
+  }
+
+  if (pending.kind === PendingActionKind.setDueDate && pending.taskId) {
+    const result = parseDueDateInput(text);
+    if (!result.ok) {
+      if (result.error === 'past') {
+        await ctx.reply('⚠️ Эта дата уже прошла. Попробуй ещё раз или /cancel.');
+      } else {
+        await ctx.reply(
+          '⚠️ Не понял формат. Жду <code>27.04.2026</code> или <code>27.04.2026 18:00</code>. Или /cancel.',
+          { parse_mode: 'HTML' },
+        );
+      }
+      return;
+    }
+
+    const task = await prisma.task.findUnique({ where: { id: pending.taskId } });
+    if (!task) {
+      await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+      await ctx.reply('Задача уже не существует 🙃');
+      return;
+    }
+
+    await prisma.task.update({
+      where: { id: pending.taskId },
+      data: { dueAt: result.dueAt, dueHasTime: result.dueHasTime },
+    });
     await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
     const mode = (pending.panelMode as PendingMode | null) ?? 'my';

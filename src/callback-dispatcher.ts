@@ -18,8 +18,10 @@ export type InlineKeyboardLike = {
 export type PendingActionLike = {
   id: string;
   kind?: string | null;
+  taskId?: string | null;
   panelMode?: string | null;
   panelPage?: number | null;
+  panelMessageId?: number | null;
   draftTitle?: string | null;
 };
 
@@ -38,7 +40,10 @@ export type DispatchDeps = {
     };
     task: {
       delete: (args: { where: { numId: number } }) => Promise<unknown>;
-      findUnique: (args: unknown) => Promise<{ id: string; title: string } | null>;
+      findUnique: (args: unknown) => Promise<
+        | { id: string; title: string; dueAt?: Date | null; dueHasTime?: boolean }
+        | null
+      >;
       update: (args: unknown) => Promise<{ numId: number }>;
       create: (args: unknown) => Promise<unknown>;
     };
@@ -53,6 +58,7 @@ export type DispatchDeps = {
     addTask: string;
     addTaskDraft: string;
     editTitle: string;
+    setDueDate: string;
   };
 
   InlineKeyboard: new () => InlineKeyboardLike;
@@ -126,11 +132,14 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       const pending = await deps.prisma.pendingAction.findFirst({ where: { userId: me.id }, orderBy: { createdAt: 'desc' } });
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
-      // The edit-title prompt is sent as a separate message above the panel.
-      // Cancelling it should collapse only the prompt, not overwrite it with a list
-      // (the original task-detail panel above is still accurate).
-      if (pending?.kind === deps.PendingActionKind.editTitle) {
-        await editOrReply(ctx, messageId, '❌ Отмена редактирования.');
+      // Edit-title and set-due-date prompts are sent as separate messages above
+      // the panel. Cancelling should collapse only the prompt, not overwrite it
+      // with a list (the panel above is still accurate).
+      if (
+        pending?.kind === deps.PendingActionKind.editTitle ||
+        pending?.kind === deps.PendingActionKind.setDueDate
+      ) {
+        await editOrReply(ctx, messageId, '❌ Отмена.');
         return;
       }
 
@@ -233,6 +242,66 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
         `✏️ Текущий текст:\n<code>${escapeHtml(task.title)}</code>\n\nПришли новый текст одним сообщением.`,
         { parse_mode: 'HTML', reply_markup: kb } as any,
       );
+      return;
+    }
+
+    case 't:setDue': {
+      const me = await deps.upsertUserFromCtx(ctx);
+      const task = await deps.prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
+      if (!task) {
+        if (messageId) await deps.showList(ctx, parsed.mode, parsed.page, messageId);
+        return;
+      }
+
+      await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+      await deps.prisma.pendingAction.create({
+        data: {
+          kind: deps.PendingActionKind.setDueDate,
+          userId: me.id,
+          taskId: task.id,
+          panelMode: parsed.mode,
+          panelPage: parsed.page,
+          panelMessageId: messageId,
+        },
+      });
+
+      const kb = new deps.InlineKeyboard();
+      if (task.dueAt) kb.text('🗑 Очистить', 'v:clearDue');
+      kb.text('❌ Отмена', 'v:cancel');
+
+      await ctx.reply(
+        `📅 Когда сделать?\n\nФормат: <code>27.04.2026</code> или <code>27.04.2026 18:00</code>`,
+        { parse_mode: 'HTML', reply_markup: kb } as any,
+      );
+      return;
+    }
+
+    case 'v:clearDue': {
+      if (!messageId) return;
+      const me = await deps.upsertUserFromCtx(ctx);
+      const pending = await deps.prisma.pendingAction.findFirst({
+        where: { userId: me.id, kind: deps.PendingActionKind.setDueDate },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!pending) {
+        await editOrReply(ctx, messageId, 'Уже неактуально 🙃');
+        return;
+      }
+
+      if (pending.taskId) {
+        await deps.prisma.task.update({
+          where: { id: pending.taskId },
+          data: { dueAt: null, dueHasTime: false },
+        });
+      }
+      await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
+
+      await editOrReply(ctx, messageId, '✅ Срок убран.');
+
+      const mode = (pending.panelMode as ListMode | null | undefined) ?? 'my';
+      const page = pending.panelPage ?? 0;
+      if (pending.panelMessageId) await deps.showList(ctx, mode, page, pending.panelMessageId);
       return;
     }
 

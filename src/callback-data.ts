@@ -5,6 +5,7 @@ export type ViewCallback =
   | { kind: 'v:add'; mode: ListMode; page: number }
   | { kind: 'v:cancel' }
   | { kind: 'v:addDraft'; action: 'confirm' | 'cancel' }
+  | { kind: 'v:clearDue' }
   | { kind: 'v:task'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 'noop' };
 
@@ -12,6 +13,7 @@ export type TaskCallback =
   | { kind: 't:delask'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:delyes'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:edit'; taskNumId: number; mode: ListMode; page: number }
+  | { kind: 't:setDue'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:done'; taskNumId: number; mode: ListMode; page: number }
   | { kind: 't:reopen'; taskNumId: number; mode: ListMode; page: number }
   ;
@@ -35,6 +37,7 @@ export function parseCallbackData(raw: string): CallbackData | null {
 
   if (s === 'noop') return { kind: 'noop' };
   if (s === 'v:cancel') return { kind: 'v:cancel' };
+  if (s === 'v:clearDue') return { kind: 'v:clearDue' };
 
   // v:list:<mode>:<page>
   {
@@ -85,6 +88,12 @@ export function parseCallbackData(raw: string): CallbackData | null {
     if (m) return { kind: 't:edit', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
   }
 
+  // t:setDue:<taskNumId>:<mode>:<page>
+  {
+    const m = s.match(/^t:setDue:(\d+):(my|done):(\d+)$/);
+    if (m) return { kind: 't:setDue', taskNumId: Number(m[1]), mode: m[2] as any, page: Number(m[3]) };
+  }
+
   // t:(done|reopen):<taskNumId>:<mode>:<page>
   {
     const m = s.match(/^t:(done|reopen):(\d+):(my|done):(\d+)$/);
@@ -108,6 +117,8 @@ export function formatCallbackData(d: CallbackData): string {
       return 'noop';
     case 'v:cancel':
       return 'v:cancel';
+    case 'v:clearDue':
+      return 'v:clearDue';
     case 'v:list':
       return `v:list:${d.mode}:${d.page}`;
     case 'v:add':
@@ -122,6 +133,8 @@ export function formatCallbackData(d: CallbackData): string {
       return `t:delyes:${d.taskNumId}:${d.mode}:${d.page}`;
     case 't:edit':
       return `t:edit:${d.taskNumId}:${d.mode}:${d.page}`;
+    case 't:setDue':
+      return `t:setDue:${d.taskNumId}:${d.mode}:${d.page}`;
     case 't:done':
       return `t:done:${d.taskNumId}:${d.mode}:${d.page}`;
     case 't:reopen':

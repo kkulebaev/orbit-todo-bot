@@ -48,7 +48,7 @@ function makeDeps() {
 
   return {
     prisma,
-    PendingActionKind: { addTask: 'addTask', addTaskDraft: 'addTaskDraft', editTitle: 'editTitle' },
+    PendingActionKind: { addTask: 'addTask', addTaskDraft: 'addTaskDraft', editTitle: 'editTitle', setDueDate: 'setDueDate' },
     InlineKeyboard,
     fmtUser: (u: any) => (u.username ? `@${u.username}` : 'user'),
     fmtTaskLine: () => 'line',
@@ -201,5 +201,96 @@ describe('callback-dispatcher routing', () => {
     await dispatchCallbackData(ctx, { kind: 'v:cancel' }, deps as any);
 
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'done', 1, 123);
+  });
+
+  it('v:cancel collapses the prompt for setDueDate flow too', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.pendingAction.findFirst = vi.fn(async () => ({ id: 'p1', kind: 'setDueDate', panelMode: 'my', panelPage: 0 }));
+
+    await dispatchCallbackData(ctx, { kind: 'v:cancel' }, deps as any);
+
+    expect(deps.prisma.pendingAction.deleteMany).toHaveBeenCalled();
+    expect(ctx.api.editMessageText).toHaveBeenCalled();
+    expect(deps.showList).not.toHaveBeenCalled();
+  });
+
+  it('t:setDue creates setDueDate pending and sends prompt without clear button when no current dueAt', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.task.findUnique = vi.fn(async () => ({ id: 'task-1', title: 'купить хлеб', dueAt: null, dueHasTime: false }));
+
+    await dispatchCallbackData(ctx, { kind: 't:setDue', taskNumId: 7, mode: 'my', page: 1 }, deps as any);
+
+    expect(deps.prisma.pendingAction.create).toHaveBeenCalledWith({
+      data: {
+        kind: 'setDueDate',
+        userId: 'me',
+        taskId: 'task-1',
+        panelMode: 'my',
+        panelPage: 1,
+        panelMessageId: 123,
+      },
+    });
+
+    const replyArgs = (ctx.reply as any).mock.calls[0];
+    expect(replyArgs[1].reply_markup.inline_keyboard).toEqual([
+      [{ text: '❌ Отмена', callback_data: 'v:cancel' }],
+    ]);
+  });
+
+  it('t:setDue includes clear button when dueAt is set', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.task.findUnique = vi.fn(async () => ({
+      id: 'task-1',
+      title: 'купить хлеб',
+      dueAt: new Date('2026-04-30T15:00:00Z'),
+      dueHasTime: true,
+    }));
+
+    await dispatchCallbackData(ctx, { kind: 't:setDue', taskNumId: 7, mode: 'my', page: 0 }, deps as any);
+
+    const replyArgs = (ctx.reply as any).mock.calls[0];
+    expect(replyArgs[1].reply_markup.inline_keyboard).toEqual([
+      [{ text: '🗑 Очистить', callback_data: 'v:clearDue' }],
+      [{ text: '❌ Отмена', callback_data: 'v:cancel' }],
+    ]);
+  });
+
+  it('v:clearDue resets task.dueAt, deletes pending and refreshes panel', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.pendingAction.findFirst = vi.fn(async () => ({
+      id: 'p1',
+      kind: 'setDueDate',
+      taskId: 'task-1',
+      panelMode: 'my',
+      panelPage: 2,
+      panelMessageId: 999,
+    }));
+
+    await dispatchCallbackData(ctx, { kind: 'v:clearDue' }, deps as any);
+
+    expect(deps.prisma.task.update).toHaveBeenCalledWith({
+      where: { id: 'task-1' },
+      data: { dueAt: null, dueHasTime: false },
+    });
+    expect(deps.prisma.pendingAction.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
+    expect(ctx.api.editMessageText).toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2, 999);
+  });
+
+  it('v:clearDue is a no-op when no setDueDate pending exists', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.pendingAction.findFirst = vi.fn(async () => null);
+
+    await dispatchCallbackData(ctx, { kind: 'v:clearDue' }, deps as any);
+
+    expect(deps.prisma.task.update).not.toHaveBeenCalled();
+    expect(deps.prisma.pendingAction.delete).not.toHaveBeenCalled();
+    expect(ctx.api.editMessageText).toHaveBeenCalled();
+    expect(deps.showList).not.toHaveBeenCalled();
   });
 });

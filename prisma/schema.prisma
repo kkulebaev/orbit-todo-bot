@@ -42,6 +42,8 @@ model Task {
   status       TaskStatus @default(open)
   createdAt    DateTime   @default(now())
   doneAt       DateTime?
+  dueAt        DateTime?
+  dueHasTime   Boolean    @default(false)
 
   createdById  String
   createdBy    User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -59,6 +61,7 @@ enum PendingActionKind {
   editTitle
   addTask
   addTaskDraft
+  setDueDate
 }
 
 model PendingAction {

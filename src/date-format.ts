@@ -21,8 +21,29 @@ const absoluteFmt = new Intl.DateTimeFormat('ru-RU', {
   year: 'numeric',
 });
 
+const dayMonthFmt = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: BOT_TZ,
+  day: '2-digit',
+  month: '2-digit',
+});
+
+const yearFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BOT_TZ,
+  year: 'numeric',
+});
+
 function dateOnlyInTZ(d: Date): string {
   return dateOnlyFmt.format(d);
+}
+
+function yearInTZ(d: Date): number {
+  return Number(yearFmt.format(d));
+}
+
+function absoluteInTZ(d: Date, now: Date): string {
+  return yearInTZ(d) === yearInTZ(now)
+    ? dayMonthFmt.format(d)
+    : absoluteFmt.format(d);
 }
 
 function diffDaysInTZ(later: Date, earlier: Date): number {
@@ -46,4 +67,26 @@ export function formatSmart(date: Date, now: Date = new Date()): string {
   if (diff === 1) return `вчера в ${timeFmt.format(date)}`;
   if (diff <= 7) return `${diff} ${dayWord(diff)} назад`;
   return absoluteFmt.format(date);
+}
+
+export function formatDueSmart(
+  dueAt: Date,
+  hasTime: boolean,
+  now: Date = new Date(),
+): { text: string; overdue: boolean } {
+  const overdue = hasTime
+    ? dueAt.getTime() < now.getTime()
+    : dateOnlyInTZ(now) > dateOnlyInTZ(dueAt);
+
+  if (overdue) {
+    return { text: `просрочено · ${absoluteInTZ(dueAt, now)}`, overdue: true };
+  }
+
+  const diff = diffDaysInTZ(dueAt, now);
+  const time = hasTime ? ` в ${timeFmt.format(dueAt)}` : '';
+
+  if (diff <= 0) return { text: `сегодня${time}`, overdue: false };
+  if (diff === 1) return { text: `завтра${time}`, overdue: false };
+  if (diff <= 7) return { text: `через ${diff} ${dayWord(diff)}${time}`, overdue: false };
+  return { text: `${absoluteInTZ(dueAt, now)}${time}`, overdue: false };
 }
