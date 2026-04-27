@@ -40,7 +40,7 @@ type PendingMode = 'my' | 'done';
 function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date = new Date()): string {
   if (!t.dueAt) return '';
   const { text, overdue } = formatDueSmart(t.dueAt, t.dueHasTime, now);
-  return ` · ${overdue ? '⚠️' : '⏰'} ${text}`;
+  return ` · ${overdue ? '⚠️' : '⏰'} <i>${text}</i>`;
 }
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
