@@ -31,6 +31,10 @@ export type ListMode = 'my' | 'done';
 
 export const PAGE_SIZE = 8;
 
+// Open tasks with a deadline within this many calendar days (inclusive)
+// are surfaced above the rest, sorted by deadline ascending.
+export const DUE_SOON_DAYS = 7;
+
 export function isTelegramMessageNotModifiedError(e: unknown) {
   const msg = String((e as any)?.description ?? (e as any)?.message ?? '').toLowerCase();
   return msg.includes('message is not modified');

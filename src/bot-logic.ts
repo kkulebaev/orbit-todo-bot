@@ -33,6 +33,17 @@ const dueDayOnlyFmt = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+/**
+ * Exclusive upper bound for "due-soon" tasks: rows with `dueAt < cutoff`
+ * are within `days` calendar days of `now` (inclusive) in `BOT_TZ`.
+ * Equivalent to `startOfToday(BOT_TZ) + (days + 1) days`.
+ */
+export function computeDueSoonCutoff(now: Date, days: number): Date {
+  const todayInTZ = dueDayOnlyFmt.format(now);
+  const startOfToday = new Date(`${todayInTZ}T00:00:00${BOT_TZ_OFFSET}`);
+  return new Date(startOfToday.getTime() + (days + 1) * 24 * 60 * 60 * 1000);
+}
+
 function isRealCalendarDate(day: number, month: number, year: number): boolean {
   const dt = new Date(Date.UTC(year, month - 1, day));
   return (

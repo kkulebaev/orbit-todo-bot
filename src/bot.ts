@@ -1,12 +1,12 @@
 import { Context, InlineKeyboard } from 'grammy';
-import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
+import { PendingActionKind, PrismaClient, Task, TaskStatus, User } from '@prisma/client';
 import { bot } from './bot-instance.js';
-import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
+import { DUE_SOON_DAYS, escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
 import { formatDueSmart, formatSmart } from './date-format.js';
-import { parseDueDateInput } from './bot-logic.js';
+import { computeDueSoonCutoff, parseDueDateInput } from './bot-logic.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
@@ -44,35 +44,46 @@ function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date 
 }
 
 async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
-  const where: any = {};
-  if (mode === 'done') where.status = 'done';
-  else where.status = 'open';
+  if (mode === 'done') {
+    const where = { status: 'done' as const, assignedToId: viewer.id };
+    const [tasks, total] = await Promise.all([
+      prisma.task.findMany({
+        where,
+        orderBy: [
+          // UX: newest completed first
+          { doneAt: 'desc' as const },
+          // Fallback for tasks without doneAt (should be rare)
+          { createdAt: 'desc' as const },
+        ],
+        skip: page * PAGE_SIZE,
+        take: PAGE_SIZE,
+      }),
+      prisma.task.count({ where }),
+    ]);
+    return { tasks, total };
+  }
 
-  // Privacy: lists should be scoped to the viewer
-  where.assignedToId = viewer.id;
-
-  const taskOrderBy = mode === 'done'
-    ? [
-        // UX: newest completed first
-        { doneAt: 'desc' as const },
-        // Fallback for tasks without doneAt (should be rare)
-        { createdAt: 'desc' as const },
-      ]
-    : [
-        // UX: newest created first
-        { createdAt: 'desc' as const },
-      ];
-
+  // mode === 'my':
+  //   1) "due-soon" zone (dueAt within DUE_SOON_DAYS calendar days, including overdue)
+  //      sorted by dueAt ASC — what's burning surfaces first.
+  //   2) Everything else (no dueAt, or dueAt past the horizon) by createdAt DESC.
+  // Prisma orderBy can't express the CASE, so the listing query is raw.
+  const where = { status: 'open' as const, assignedToId: viewer.id };
+  const cutoff = computeDueSoonCutoff(new Date(), DUE_SOON_DAYS);
+  const offset = page * PAGE_SIZE;
   const [tasks, total] = await Promise.all([
-    prisma.task.findMany({
-      where,
-      orderBy: taskOrderBy,
-      skip: page * PAGE_SIZE,
-      take: PAGE_SIZE,
-    }),
+    prisma.$queryRaw<Task[]>`
+      SELECT *
+      FROM "Task"
+      WHERE "status" = 'open'::"TaskStatus" AND "assignedToId" = ${viewer.id}
+      ORDER BY
+        CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN 0 ELSE 1 END ASC,
+        CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN "dueAt" END ASC NULLS LAST,
+        "createdAt" DESC
+      LIMIT ${PAGE_SIZE} OFFSET ${offset}
+    `,
     prisma.task.count({ where }),
   ]);
-
   return { tasks, total };
 }
 
