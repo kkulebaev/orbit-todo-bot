@@ -123,7 +123,7 @@ describe('callback-dispatcher routing', () => {
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 
-  it('routes v:addDraft:confirm to task.create + pendingAction.delete + editMessageText, no showList', async () => {
+  it('routes v:addDraft:confirm to task.create + pendingAction.delete + editMessageText + fresh /my panel', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
     deps.prisma.pendingAction.findFirst = vi.fn(async () => ({ id: 'p1', draftTitle: 'купить молоко' }));
@@ -134,7 +134,7 @@ describe('callback-dispatcher routing', () => {
     expect(deps.prisma.pendingAction.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
     expect(ctx.api.editMessageText).toHaveBeenCalled();
     expect(ctx.reply).not.toHaveBeenCalled();
-    expect(deps.showList).not.toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0);
   });
 
   it('does nothing when messageId is missing for actions that require it', async () => {

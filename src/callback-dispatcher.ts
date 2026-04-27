@@ -172,6 +172,7 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
 
       await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
       await editOrReply(ctx, messageId, `✅ Создал задачу!\n\n${deps.fmtTaskLine(task)}`);
+      await deps.showList(ctx, 'my', 0);
       return;
     }
 
