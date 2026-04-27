@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { Context, InlineKeyboard } from 'grammy';
 import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
 import { bot } from './bot-instance.js';
