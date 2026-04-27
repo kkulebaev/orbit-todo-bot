@@ -145,4 +145,61 @@ describe('callback-dispatcher routing', () => {
 
     expect(deps.showList).not.toHaveBeenCalled();
   });
+
+  it('t:edit creates editTitle pending with panel context and sends prompt with old title in <code>', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.task.findUnique = vi.fn(async () => ({ id: 'task-1', title: 'купить хлеб' }));
+
+    await dispatchCallbackData(ctx, { kind: 't:edit', taskNumId: 7, mode: 'done', page: 2 }, deps as any);
+
+    expect(deps.prisma.pendingAction.create).toHaveBeenCalledWith({
+      data: {
+        kind: 'editTitle',
+        userId: 'me',
+        taskId: 'task-1',
+        panelMode: 'done',
+        panelPage: 2,
+        panelMessageId: 123,
+      },
+    });
+
+    const replyArgs = (ctx.reply as any).mock.calls[0];
+    expect(replyArgs[0]).toContain('<code>купить хлеб</code>');
+    expect(replyArgs[1].reply_markup.inline_keyboard).toEqual([[{ text: '❌ Отмена', callback_data: 'v:cancel' }]]);
+  });
+
+  it('t:edit HTML-escapes the old title to prevent injection', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.task.findUnique = vi.fn(async () => ({ id: 'task-1', title: '<script>alert(1)</script>' }));
+
+    await dispatchCallbackData(ctx, { kind: 't:edit', taskNumId: 1, mode: 'my', page: 0 }, deps as any);
+
+    const replyArgs = (ctx.reply as any).mock.calls[0];
+    expect(replyArgs[0]).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(replyArgs[0]).not.toContain('<script>');
+  });
+
+  it('v:cancel collapses the prompt only when cancelling an edit-title flow', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.pendingAction.findFirst = vi.fn(async () => ({ id: 'p1', kind: 'editTitle', panelMode: 'my', panelPage: 3 }));
+
+    await dispatchCallbackData(ctx, { kind: 'v:cancel' }, deps as any);
+
+    expect(deps.prisma.pendingAction.deleteMany).toHaveBeenCalled();
+    expect(ctx.api.editMessageText).toHaveBeenCalled();
+    expect(deps.showList).not.toHaveBeenCalled();
+  });
+
+  it('v:cancel from add-task pending restores the panel into a list', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.prisma.pendingAction.findFirst = vi.fn(async () => ({ id: 'p1', kind: 'addTask', panelMode: 'done', panelPage: 1 }));
+
+    await dispatchCallbackData(ctx, { kind: 'v:cancel' }, deps as any);
+
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'done', 1, 123);
+  });
 });

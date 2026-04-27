@@ -1,5 +1,5 @@
 import type { CallbackData, ListMode } from './callback-data.js';
-import { isTelegramMessageNotModifiedError } from './utils.js';
+import { escapeHtml, isTelegramMessageNotModifiedError } from './utils.js';
 
 export type CtxLike = {
   chat?: { id: number | string };
@@ -17,6 +17,7 @@ export type InlineKeyboardLike = {
 
 export type PendingActionLike = {
   id: string;
+  kind?: string | null;
   panelMode?: string | null;
   panelPage?: number | null;
   draftTitle?: string | null;
@@ -37,7 +38,7 @@ export type DispatchDeps = {
     };
     task: {
       delete: (args: { where: { numId: number } }) => Promise<unknown>;
-      findUnique: (args: unknown) => Promise<{ id: string } | null>;
+      findUnique: (args: unknown) => Promise<{ id: string; title: string } | null>;
       update: (args: unknown) => Promise<{ numId: number }>;
       create: (args: unknown) => Promise<unknown>;
     };
@@ -125,6 +126,14 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       const pending = await deps.prisma.pendingAction.findFirst({ where: { userId: me.id }, orderBy: { createdAt: 'desc' } });
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
+      // The edit-title prompt is sent as a separate message above the panel.
+      // Cancelling it should collapse only the prompt, not overwrite it with a list
+      // (the original task-detail panel above is still accurate).
+      if (pending?.kind === deps.PendingActionKind.editTitle) {
+        await editOrReply(ctx, messageId, '❌ Отмена редактирования.');
+        return;
+      }
+
       const mode = (pending?.panelMode as ListMode | null | undefined) ?? 'my';
       const page = pending?.panelPage ?? 0;
       await deps.showList(ctx, mode, page, messageId);
@@ -207,8 +216,22 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       }
 
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-      await deps.prisma.pendingAction.create({ data: { kind: deps.PendingActionKind.editTitle, userId: me.id, taskId: task.id } });
-      await ctx.reply(`✏️ Ок! Пришли новым сообщением <b>новый текст задачи</b>.\n\nОтмена: /cancel`, { parse_mode: 'HTML' });
+      await deps.prisma.pendingAction.create({
+        data: {
+          kind: deps.PendingActionKind.editTitle,
+          userId: me.id,
+          taskId: task.id,
+          panelMode: parsed.mode,
+          panelPage: parsed.page,
+          panelMessageId: messageId,
+        },
+      });
+
+      const kb = new deps.InlineKeyboard().text('❌ Отмена', 'v:cancel');
+      await ctx.reply(
+        `✏️ Текущий текст:\n<code>${escapeHtml(task.title)}</code>\n\nПришли новый текст одним сообщением.`,
+        { parse_mode: 'HTML', reply_markup: kb } as any,
+      );
       return;
     }
 
