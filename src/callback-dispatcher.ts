@@ -6,6 +6,7 @@ export type CtxLike = {
   callbackQuery?: { message?: { message_id: number } };
   api: {
     editMessageText: (...args: any[]) => Promise<unknown>;
+    deleteMessage: (...args: any[]) => Promise<unknown>;
   };
   reply: (...args: any[]) => Promise<unknown>;
 };
@@ -22,6 +23,7 @@ export type PendingActionLike = {
   panelMode?: string | null;
   panelPage?: number | null;
   panelMessageId?: number | null;
+  promptMessageId?: number | null;
   draftTitle?: string | null;
 };
 
@@ -226,6 +228,13 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       }
 
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+
+      const kb = new deps.InlineKeyboard().text('❌ Отмена', 'v:cancel');
+      const prompt = (await ctx.reply(
+        `✏️ Текущий текст:\n<code>${escapeHtml(task.title)}</code>\n\nПришли новый текст одним сообщением.`,
+        { parse_mode: 'HTML', reply_markup: kb } as any,
+      )) as { message_id: number } | undefined;
+
       await deps.prisma.pendingAction.create({
         data: {
           kind: deps.PendingActionKind.editTitle,
@@ -234,14 +243,9 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
           panelMode: parsed.mode,
           panelPage: parsed.page,
           panelMessageId: messageId,
+          promptMessageId: prompt?.message_id,
         },
       });
-
-      const kb = new deps.InlineKeyboard().text('❌ Отмена', 'v:cancel');
-      await ctx.reply(
-        `✏️ Текущий текст:\n<code>${escapeHtml(task.title)}</code>\n\nПришли новый текст одним сообщением.`,
-        { parse_mode: 'HTML', reply_markup: kb } as any,
-      );
       return;
     }
 
@@ -254,6 +258,16 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       }
 
       await deps.prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+
+      const kb = new deps.InlineKeyboard();
+      if (task.dueAt) kb.text('🗑 Очистить', 'v:clearDue');
+      kb.text('❌ Отмена', 'v:cancel');
+
+      const prompt = (await ctx.reply(
+        `📅 Когда сделать?\n\nФормат: <code>27.04.2026</code> или <code>27.04.2026 18:00</code>`,
+        { parse_mode: 'HTML', reply_markup: kb } as any,
+      )) as { message_id: number } | undefined;
+
       await deps.prisma.pendingAction.create({
         data: {
           kind: deps.PendingActionKind.setDueDate,
@@ -262,17 +276,9 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
           panelMode: parsed.mode,
           panelPage: parsed.page,
           panelMessageId: messageId,
+          promptMessageId: prompt?.message_id,
         },
       });
-
-      const kb = new deps.InlineKeyboard();
-      if (task.dueAt) kb.text('🗑 Очистить', 'v:clearDue');
-      kb.text('❌ Отмена', 'v:cancel');
-
-      await ctx.reply(
-        `📅 Когда сделать?\n\nФормат: <code>27.04.2026</code> или <code>27.04.2026 18:00</code>`,
-        { parse_mode: 'HTML', reply_markup: kb } as any,
-      );
       return;
     }
 
@@ -297,11 +303,18 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       }
       await deps.prisma.pendingAction.delete({ where: { id: pending.id } });
 
-      await editOrReply(ctx, messageId, '✅ Срок убран.');
+      const chatId = ctx.chat!.id;
+      const promptId = pending.promptMessageId ?? messageId;
+      try { await ctx.api.deleteMessage(chatId, promptId); } catch {}
+      if (pending.panelMessageId) {
+        try { await ctx.api.deleteMessage(chatId, pending.panelMessageId); } catch {}
+      }
+
+      await ctx.reply('✅ Срок убран');
 
       const mode = (pending.panelMode as ListMode | null | undefined) ?? 'my';
       const page = pending.panelPage ?? 0;
-      if (pending.panelMessageId) await deps.showList(ctx, mode, page, pending.panelMessageId);
+      await deps.showList(ctx, mode, page);
       return;
     }
 

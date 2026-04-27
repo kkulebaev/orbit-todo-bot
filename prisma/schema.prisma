@@ -76,9 +76,10 @@ model PendingAction {
   task           Task?             @relation(fields: [taskId], references: [id])
 
   // Optional UI context (so we can return the user back to the same panel)
-  panelMode      String?
-  panelPage      Int?
-  panelMessageId Int?
+  panelMode       String?
+  panelPage       Int?
+  panelMessageId  Int?
+  promptMessageId Int?
 
   // Draft payload for pending UI flows
   draftTitle     String?

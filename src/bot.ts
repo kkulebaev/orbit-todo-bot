@@ -329,10 +329,19 @@ bot.on('message:text', async (ctx, next) => {
     await prisma.task.update({ where: { id: pending.taskId }, data: { title: newTitle } });
     await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
+    const chatId = ctx.chat!.id;
+    if (pending.promptMessageId) {
+      try { await ctx.api.deleteMessage(chatId, pending.promptMessageId); } catch {}
+    }
+    if (pending.panelMessageId) {
+      try { await ctx.api.deleteMessage(chatId, pending.panelMessageId); } catch {}
+    }
+
+    await ctx.reply('✅ Задача обновлена');
+
     const mode = (pending.panelMode as PendingMode | null) ?? 'my';
     const page = pending.panelPage ?? 0;
-    const panelMessageId = pending.panelMessageId ?? undefined;
-    await showList(ctx, mode, page, panelMessageId);
+    await showList(ctx, mode, page);
     return;
   }
 
@@ -363,10 +372,19 @@ bot.on('message:text', async (ctx, next) => {
     });
     await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
 
+    const chatId = ctx.chat!.id;
+    if (pending.promptMessageId) {
+      try { await ctx.api.deleteMessage(chatId, pending.promptMessageId); } catch {}
+    }
+    if (pending.panelMessageId) {
+      try { await ctx.api.deleteMessage(chatId, pending.panelMessageId); } catch {}
+    }
+
+    await ctx.reply('✅ Срок установлен');
+
     const mode = (pending.panelMode as PendingMode | null) ?? 'my';
     const page = pending.panelPage ?? 0;
-    const panelMessageId = pending.panelMessageId ?? undefined;
-    await showList(ctx, mode, page, panelMessageId);
+    await showList(ctx, mode, page);
     return;
   }
 

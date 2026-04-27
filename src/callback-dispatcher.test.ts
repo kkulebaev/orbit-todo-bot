@@ -9,8 +9,9 @@ function makeCtx(messageId: number | null = 123) {
       : { data: 'x', message: { message_id: messageId } },
     api: {
       editMessageText: vi.fn(async () => {}),
+      deleteMessage: vi.fn(async () => {}),
     },
-    reply: vi.fn(async () => {}),
+    reply: vi.fn(async () => ({ message_id: 555 })),
   };
 }
 
@@ -148,6 +149,7 @@ describe('callback-dispatcher routing', () => {
 
   it('t:edit creates editTitle pending with panel context and sends prompt with old title in <code>', async () => {
     const ctx = makeCtx();
+    (ctx.reply as any) = vi.fn(async () => ({ message_id: 555 }));
     const deps = makeDeps();
     deps.prisma.task.findUnique = vi.fn(async () => ({ id: 'task-1', title: 'купить хлеб' }));
 
@@ -161,6 +163,7 @@ describe('callback-dispatcher routing', () => {
         panelMode: 'done',
         panelPage: 2,
         panelMessageId: 123,
+        promptMessageId: 555,
       },
     });
 
@@ -230,6 +233,7 @@ describe('callback-dispatcher routing', () => {
         panelMode: 'my',
         panelPage: 1,
         panelMessageId: 123,
+        promptMessageId: 555,
       },
     });
 
@@ -258,7 +262,7 @@ describe('callback-dispatcher routing', () => {
     ]);
   });
 
-  it('v:clearDue resets task.dueAt, deletes pending and refreshes panel', async () => {
+  it('v:clearDue resets task.dueAt, deletes prompt+panel, sends confirmation and a fresh list', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
     deps.prisma.pendingAction.findFirst = vi.fn(async () => ({
@@ -268,6 +272,7 @@ describe('callback-dispatcher routing', () => {
       panelMode: 'my',
       panelPage: 2,
       panelMessageId: 999,
+      promptMessageId: 777,
     }));
 
     await dispatchCallbackData(ctx, { kind: 'v:clearDue' }, deps as any);
@@ -277,8 +282,10 @@ describe('callback-dispatcher routing', () => {
       data: { dueAt: null, dueHasTime: false },
     });
     expect(deps.prisma.pendingAction.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
-    expect(ctx.api.editMessageText).toHaveBeenCalled();
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2, 999);
+    expect(ctx.api.deleteMessage).toHaveBeenCalledWith(1, 777);
+    expect(ctx.api.deleteMessage).toHaveBeenCalledWith(1, 999);
+    expect(ctx.reply).toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2);
   });
 
   it('v:clearDue is a no-op when no setDueDate pending exists', async () => {
