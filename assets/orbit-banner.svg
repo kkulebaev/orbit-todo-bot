@@ -1,53 +1,164 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="240" viewBox="0 0 1200 240">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="Orbit TODO Bot">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b0f1a"/>
-      <stop offset="1" stop-color="#1a1030"/>
-    </linearGradient>
+    <radialGradient id="bg" cx="0.25" cy="0.2" r="1.1">
+      <stop offset="0" stop-color="#1b1740"/>
+      <stop offset="0.55" stop-color="#0f1230"/>
+      <stop offset="1" stop-color="#06070f"/>
+    </radialGradient>
+
     <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#ff5ea8"/>
-      <stop offset="1" stop-color="#6ee7ff"/>
+      <stop offset="0" stop-color="#ff6ea8"/>
+      <stop offset="0.5" stop-color="#a07bff"/>
+      <stop offset="1" stop-color="#5cd5ff"/>
     </linearGradient>
+
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfe1ff"/>
+    </linearGradient>
+
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff6ea8" stop-opacity="0"/>
+      <stop offset="0.15" stop-color="#ff6ea8"/>
+      <stop offset="0.5" stop-color="#a07bff"/>
+      <stop offset="0.85" stop-color="#5cd5ff"/>
+      <stop offset="1" stop-color="#5cd5ff" stop-opacity="0"/>
+    </linearGradient>
+
+    <radialGradient id="planet" cx="0.35" cy="0.35" r="0.85">
+      <stop offset="0" stop-color="#5b6394"/>
+      <stop offset="0.55" stop-color="#2b2f55"/>
+      <stop offset="1" stop-color="#13142b"/>
+    </radialGradient>
+
+    <radialGradient id="planetGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#a07bff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#a07bff" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="satGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#5cd5ff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#5cd5ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
-  <rect width="1200" height="240" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="280" rx="32" fill="url(#bg)"/>
 
-  <!-- stars -->
-  <g fill="#eaf2ff" opacity="0.7">
-    <circle cx="120" cy="60" r="2"/>
-    <circle cx="220" cy="40" r="1.5"/>
-    <circle cx="320" cy="90" r="1.2"/>
-    <circle cx="980" cy="60" r="1.8"/>
-    <circle cx="1040" cy="110" r="1.1"/>
-    <circle cx="890" cy="150" r="1.4"/>
-    <circle cx="760" cy="50" r="1.1"/>
-    <circle cx="640" cy="100" r="1.3"/>
+  <!-- subtle grid glow -->
+  <g opacity="0.08" stroke="#9aa7ff" stroke-width="1">
+    <line x1="0" y1="70" x2="1200" y2="70"/>
+    <line x1="0" y1="140" x2="1200" y2="140"/>
+    <line x1="0" y1="210" x2="1200" y2="210"/>
   </g>
 
-  <!-- planet -->
-  <g transform="translate(110 58)">
-    <circle cx="90" cy="62" r="58" fill="#2b2f44"/>
-    <circle cx="70" cy="48" r="10" fill="#3b4060" opacity="0.9"/>
-    <circle cx="110" cy="80" r="14" fill="#3b4060" opacity="0.9"/>
-    <circle cx="98" cy="45" r="6" fill="#4b5177" opacity="0.9"/>
+  <!-- starfield -->
+  <g fill="#eaf2ff">
+    <circle cx="80"   cy="48"  r="1.2" opacity="0.7"/>
+    <circle cx="180"  cy="32"  r="0.9" opacity="0.55"/>
+    <circle cx="260"  cy="78"  r="1.4" opacity="0.85"/>
+    <circle cx="340"  cy="36"  r="0.8" opacity="0.5"/>
+    <circle cx="430"  cy="60"  r="1"   opacity="0.6"/>
+    <circle cx="520"  cy="28"  r="1.3" opacity="0.8"/>
+    <circle cx="610"  cy="64"  r="0.9" opacity="0.6"/>
+    <circle cx="700"  cy="38"  r="1.1" opacity="0.65"/>
+    <circle cx="790"  cy="80"  r="1.5" opacity="0.9"/>
+    <circle cx="880"  cy="44"  r="0.9" opacity="0.55"/>
+    <circle cx="960"  cy="74"  r="1.2" opacity="0.7"/>
+    <circle cx="1040" cy="36"  r="1"   opacity="0.6"/>
+    <circle cx="1110" cy="62"  r="1.4" opacity="0.85"/>
 
-    <!-- orbit ring -->
-    <ellipse cx="90" cy="62" rx="96" ry="34" fill="none" stroke="url(#orbit)" stroke-width="8" opacity="0.95"/>
-    <ellipse cx="90" cy="62" rx="96" ry="34" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.18"/>
+    <circle cx="120"  cy="220" r="1"   opacity="0.55"/>
+    <circle cx="280"  cy="232" r="1.3" opacity="0.75"/>
+    <circle cx="490"  cy="240" r="0.9" opacity="0.5"/>
+    <circle cx="700"  cy="234" r="1.1" opacity="0.65"/>
+    <circle cx="900"  cy="244" r="1.2" opacity="0.7"/>
+    <circle cx="1080" cy="226" r="1"   opacity="0.6"/>
+  </g>
 
-    <!-- small satellite -->
-    <g transform="translate(168 46)">
-      <circle cx="0" cy="0" r="7" fill="#6ee7ff" opacity="0.95"/>
-      <rect x="-14" y="-3" width="8" height="6" rx="2" fill="#cfe6ff" opacity="0.9"/>
-      <rect x="6" y="-3" width="8" height="6" rx="2" fill="#cfe6ff" opacity="0.9"/>
+  <!-- planet system -->
+  <g transform="translate(180 140)">
+    <!-- outer glow halo -->
+    <circle cx="0" cy="0" r="120" fill="url(#planetGlow)" filter="url(#soft)"/>
+
+    <!-- back half of orbit ring (behind planet) -->
+    <path d="M -110 0 A 110 38 0 0 1 110 0" fill="none" stroke="url(#orbit)" stroke-width="3" opacity="0.45"/>
+
+    <!-- planet body -->
+    <circle cx="0" cy="0" r="62" fill="url(#planet)"/>
+
+    <!-- surface details -->
+    <g opacity="0.7">
+      <ellipse cx="-22" cy="-18" rx="14" ry="8"  fill="#3a3f6b"/>
+      <ellipse cx="14"  cy="22"  rx="20" ry="10" fill="#3a3f6b"/>
+      <ellipse cx="26"  cy="-10" rx="8"  ry="5"  fill="#4a5188"/>
+      <ellipse cx="-10" cy="14"  rx="6"  ry="4"  fill="#4a5188"/>
+    </g>
+
+    <!-- terminator highlight -->
+    <circle cx="0" cy="0" r="62" fill="none" stroke="#ffffff" stroke-width="0.8" opacity="0.18"/>
+    <circle cx="-18" cy="-22" r="40" fill="#ffffff" opacity="0.05"/>
+
+    <!-- front half of orbit ring (over planet) -->
+    <path d="M -110 0 A 110 38 0 0 0 110 0" fill="none" stroke="url(#orbit)" stroke-width="4" opacity="0.95" filter="url(#glow)"/>
+    <path d="M -110 0 A 110 38 0 0 0 110 0" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.35"/>
+
+    <!-- satellite (todo card) -->
+    <g transform="translate(96 -22)">
+      <circle cx="0" cy="0" r="22" fill="url(#satGlow)" filter="url(#soft)"/>
+      <g transform="translate(-13 -10)">
+        <rect x="0" y="0" width="26" height="20" rx="4" fill="#0f1230" stroke="#5cd5ff" stroke-width="1.4"/>
+        <rect x="4" y="5"  width="14" height="2" rx="1" fill="#5cd5ff" opacity="0.85"/>
+        <rect x="4" y="10" width="10" height="2" rx="1" fill="#a07bff" opacity="0.85"/>
+        <path d="M 18 12 L 21 15 L 26 9" fill="none" stroke="#7bf0a8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
     </g>
   </g>
 
-  <!-- title -->
-  <text x="340" y="110" fill="#ffffff" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial" font-size="54" font-weight="800">Orbit TODO Bot</text>
-  <text x="340" y="160" fill="#cfe6ff" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial" font-size="22">
-    Telegram task manager with inline buttons • Postgres + Prisma • OpenClaw-friendly
-  </text>
+  <!-- title block -->
+  <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial">
+    <text x="380" y="120" fill="url(#title)" font-size="62" font-weight="800" letter-spacing="-1.2">Orbit TODO Bot</text>
 
-  <rect x="340" y="178" width="560" height="6" rx="3" fill="url(#orbit)" opacity="0.9"/>
+    <text x="382" y="160" fill="#9fb3d6" font-size="20" font-weight="500" letter-spacing="0.2">
+      Telegram task manager · inline keyboards · Postgres + Prisma
+    </text>
+
+    <!-- pill badges -->
+    <g transform="translate(382 188)" font-size="13" font-weight="600">
+      <g>
+        <rect x="0" y="0" width="92" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <circle cx="14" cy="13" r="4" fill="#5cd5ff"/>
+        <text x="26" y="17" fill="#cfe1ff">Webhook</text>
+      </g>
+      <g transform="translate(104 0)">
+        <rect x="0" y="0" width="86" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <circle cx="14" cy="13" r="4" fill="#a07bff"/>
+        <text x="26" y="17" fill="#cfe1ff">grammY</text>
+      </g>
+      <g transform="translate(200 0)">
+        <rect x="0" y="0" width="76" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <circle cx="14" cy="13" r="4" fill="#ff6ea8"/>
+        <text x="26" y="17" fill="#cfe1ff">Prisma</text>
+      </g>
+      <g transform="translate(286 0)">
+        <rect x="0" y="0" width="86" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <circle cx="14" cy="13" r="4" fill="#7bf0a8"/>
+        <text x="26" y="17" fill="#cfe1ff">Node 22</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- accent underline -->
+  <rect x="380" y="232" width="640" height="2" rx="1" fill="url(#accent)" opacity="0.9"/>
 </svg>
