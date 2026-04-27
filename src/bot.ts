@@ -1,7 +1,7 @@
 import { Context, InlineKeyboard } from 'grammy';
 import { PendingActionKind, PrismaClient, TaskStatus, User } from '@prisma/client';
 import { bot } from './bot-instance.js';
-import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, type ListMode } from './utils.js';
+import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
@@ -83,13 +83,12 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
   if (tasks.length === 0) {
     body = mode === 'done'
       ? 'Пока нет выполненных задач.'
-      : 'Пока нет задач. Добавь первую командой:\n<code>/add купить молоко</code>';
+      : 'Пока нет задач. Можно:\n• нажать <b>➕ Добавить</b> ниже\n• или просто отправить текст задачи сообщением\n\nПереключаться между списками — кнопками <b>⏳ В работе</b> / <b>🗂️ Выполненные</b> внизу.';
   } else {
     body = tasks
       .map((t, idx) => {
         const n = page * PAGE_SIZE + idx + 1;
-        const statusEmoji = t.status === 'done' ? '✅' : '⏳';
-        return `${statusEmoji} <b>${n}.</b> ${escapeHtml(t.title)}`;
+        return `<b>${n}.</b> ${escapeHtml(truncate(t.title))}`;
       })
       .join('\n');
 
@@ -173,30 +172,22 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 
 bot.command('start', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
-
-  const user = await upsertUserFromCtx(ctx);
-
-  await ctx.reply(
-    `Привет, ${escapeHtml(fmtUser(user))}! ✨\n\n` +
-      `Я <b>Orbit</b> 🪐 — ваш милый TODO-бот.\n\n` +
-      `Открой панель: /my\n` +
-      `Быстро добавить: <code>/add купить молоко</code>\n\n` +
-      `Но удобнее — через кнопку <b>➕ Добавить</b> в панели 👇`,
-    { parse_mode: 'HTML' },
-  );
-
   await showList(ctx, 'my', 0);
 });
 
 bot.command('help', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
+  const kb = new InlineKeyboard()
+    .text('🪐 Мои задачи', 'v:list:my:0')
+    .text('🗂️ Выполненные', 'v:list:done:0');
   await ctx.reply(
-    `🪐 Orbit · help\n\n` +
+    `🪐 <b>Orbit · help</b>\n\n` +
       `📌 Команды:\n` +
-      `/add <text> — создать задачу себе\n` +
+      `/add &lt;text&gt; — создать задачу\n` +
       `/my — мои открытые\n` +
       `/done — выполненные\n` +
-      `/cancel — отменить ввод (например редактирование)`,
+      `/cancel — отменить ввод`,
+    { parse_mode: 'HTML', reply_markup: kb },
   );
 });
 

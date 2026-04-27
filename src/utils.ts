@@ -22,6 +22,11 @@ export function fmtTaskLine(t: {
   return `${statusEmoji} ${t.title}`;
 }
 
+export function truncate(s: string, max = 60) {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '…';
+}
+
 export type ListMode = 'my' | 'done';
 
 export const PAGE_SIZE = 8;
@@ -42,8 +47,7 @@ export function kbList(
   // Task picker buttons
   tasks.forEach((t, idx) => {
     const n = page * PAGE_SIZE + idx + 1;
-    const emoji = t.status === 'done' ? '✅' : '⏳';
-    kb.text(`${emoji} ${n}`, `v:task:${t.numId}:${mode}:${page}`);
+    kb.text(`${n}`, `v:task:${t.numId}:${mode}:${page}`);
     if ((idx + 1) % 4 === 0) kb.row();
   });
   kb.row();
@@ -53,7 +57,6 @@ export function kbList(
   const nextEnabled = page < maxPage;
 
   kb.text('➕ Добавить', `v:add:${mode}:${page}`);
-  kb.text('🔄 Обновить', `v:list:${mode}:${page}`);
   kb.row();
 
   kb.text(prevEnabled ? '⬅️' : '·', prevEnabled ? `v:list:${mode}:${page - 1}` : 'noop');
