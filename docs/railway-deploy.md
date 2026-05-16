@@ -39,13 +39,16 @@ The bot communicates with the API over Railway's private network at
    RAILWAY_DOCKERFILE_PATH=apps/api/Dockerfile
    ```
 4. Under **Settings → Deploy**:
-   - **Release Command**: `pnpm exec prisma migrate deploy`
+   - **Healthcheck Path**: `/healthz`
    - **Num Replicas**: `1`
 
    > **Why `numReplicas: 1`?** The idempotency guard is an in-memory LRU cache
    > (10k entries / 24h TTL). Multiple replicas would cause cache misses on
    > repeated requests routed to different instances. If you later need
    > horizontal scaling, replace the in-memory cache with a Redis-backed store.
+
+   Migrations are applied automatically by the API's Docker `CMD` at every
+   container start. Prisma's advisory lock makes parallel container starts safe.
 
 5. **Connect Postgres plugin** to the `api` service so `DATABASE_URL` is
    injected automatically.
@@ -138,20 +141,25 @@ curl -H "Authorization: Bearer <API_BOT_TOKEN>" \
 
 ---
 
-## Release Command vs Start Command
+## Migrations: where they run
 
-> **AC-10**: `prisma migrate deploy` runs in the **Release Command** of the `api`
-> service, not inside the Docker `CMD`.
+`prisma migrate deploy` is part of the API container's Docker `CMD`:
 
-Railway runs the release command *before* traffic is shifted to the new deploy.
-If the migration fails, the deploy is aborted and the previous version keeps serving traffic.
+```dockerfile
+CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && node …/server.js"]
+```
 
-Setting it in `CMD` would run it on every container restart, which is slow and
-risky (e.g. during autoscaling or crash loops).
+Rationale:
+- Railway does not have a service-level "release command" that runs out-of-band
+  before the container starts (only per-deploy commands inside the container).
+- Prisma uses a PostgreSQL advisory lock during `migrate deploy`, so concurrent
+  container starts can't corrupt migration state.
+- With `numReplicas: 1` (required for the LRU idempotency invariant), there is
+  exactly one migrate per deploy anyway.
 
-**Railway api service settings:**
-- Release Command: `pnpm exec prisma migrate deploy`
-- Start Command: *(leave blank — Docker `CMD` handles it)*
+The trade-off is that a failing migration crashes the new container instead of
+being detected before traffic shift. With manual deploys and small migrations
+this is acceptable; revisit if you move to blue/green.
 
 ---
 
