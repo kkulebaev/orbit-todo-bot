@@ -42,6 +42,11 @@ COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/bot/node_modules ./apps/bot/node_modules
 
+# Built contracts package — apps/bot/node_modules/@orbit/contracts is a pnpm
+# workspace symlink that points back at packages/contracts/, so its dist/ must
+# be present in the runtime stage too.
+COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+
 COPY --from=builder /app/apps/bot/dist ./apps/bot/dist
 
 EXPOSE 3000
