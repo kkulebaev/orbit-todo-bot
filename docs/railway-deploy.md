@@ -195,6 +195,73 @@ Setting them has no effect.
 
 ---
 
+## Rolling deploy: PAT migration (P2)
+
+The P2 release replaces the shared API_BOT_TOKEN auth path with PATs. The
+operational sequence (testable as AC-P2-22) is:
+
+1. **Generate the bot's PAT and seed env vars** (one-time, off-Railway):
+   ```
+   BOT_PAT=orbit_pat_$(openssl rand -base64 32 | tr -d '=' | tr '/+' '_-')
+   BOT_PAT_SHA256=$(node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$BOT_PAT")
+   BOT_PAT_USER_ID=$(uuidgen | tr 'A-Z' 'a-z')
+   echo "BOT_PAT=$BOT_PAT"
+   echo "BOT_PAT_USER_ID=$BOT_PAT_USER_ID"
+   echo "BOT_PAT_SHA256=$BOT_PAT_SHA256"
+   ```
+   Record these three values in a secure secret manager — `BOT_PAT` is shown
+   once; the rest are derivable from it.
+
+2. **Set Railway env vars (api service):**
+   - `API_PUBLIC_EXPOSURE=false` (keep public traffic disabled during cutover)
+   - `BOT_PAT_USER_ID=<from step 1>`
+   - `BOT_PAT_SHA256=<from step 1>`
+   - `BOT_PAT_ALLOWED_CIDR=fd00::/8,::1` (Railway internal IPv6 + loopback)
+   - `RATE_LIMIT_PER_MIN=60` (optional, default 60)
+
+3. **Deploy the api service.** The Docker CMD now runs `prisma migrate deploy &&
+   prisma db seed && node dist/server.js`. The seed reads BOT_PAT_USER_ID +
+   BOT_PAT_SHA256 and writes the bot's PAT row. With API_PUBLIC_EXPOSURE=false
+   the public domain returns 404 on /v1/*; internal traffic from the (still-old)
+   bot fails because the old bot still sends API_BOT_TOKEN.
+
+   _Bot may be temporarily broken between steps 3 and 5 — expected._
+
+4. **Set Railway env vars (bot service):**
+   - `BOT_PAT=<plaintext from step 1>`
+   - **Remove** `API_BOT_TOKEN`.
+
+5. **Deploy the bot service.** The new bot uses BOT_PAT and reaches the new
+   api via internal IPv6. Bot is back online.
+
+6. **Flip the public exposure:**
+   - On the api service: `API_PUBLIC_EXPOSURE=true`.
+   - This causes a redeploy of the api with /v1/* mounted on the public
+     domain (`orbit-todo-api.up.railway.app`).
+
+7. **Remove legacy:** `API_BOT_TOKEN` should now be absent from both services'
+   env. Verify with the Railway CLI: `railway variables --service api | grep -c
+   API_BOT_TOKEN` returns 0 for both.
+
+8. **Smoke test (legacy rejection):**
+   ```
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer <old-API_BOT_TOKEN-value>" \
+     -H "X-Telegram-User-Id: <any>" \
+     https://orbit-todo-api.up.railway.app/v1/users/me
+   ```
+   Expect: `401`.
+
+### PAT rotation procedure
+
+To rotate the bot's PAT in the future:
+1. Generate a new `BOT_PAT2 / BOT_PAT2_SHA256` (same recipe).
+2. Manually insert the new PAT row in the DB (or extend the seed to be additive).
+3. Set `BOT_PAT=<new>` on the bot service; deploy.
+4. Mark the old row `revokedAt = NOW()`.
+
+---
+
 ## Historical: P2–P4 Migration Phases
 
 > The P2 (shadow mode), P3 (READ via API), and P4 (WRITE via API) phased

@@ -187,4 +187,80 @@ describe('api-client', () => {
     // Idempotency-key plaintext must not appear in any logger output
     expect(combined).not.toMatch(/idem-key-abc/);
   });
+
+  // 15. mintCliToken: 201 returns MintCliTokenResponse
+  it('mintCliToken: 201 returns MintCliTokenResponse', async () => {
+    const mintResponse = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      token: 'orbit_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      label: 'my laptop',
+      expiresAt: '2027-01-01T00:00:00.000Z',
+    };
+    fetchMock.mockResolvedValue(mockRes(201, mintResponse));
+    const result = await makeClient(fetchMock).mintCliToken(
+      { telegramUserId: TG_USER_ID, label: 'my laptop', ttlDays: 365 },
+      IK,
+    );
+    expect(result).toEqual(mintResponse);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe(IK);
+  });
+
+  // 16. mintCliToken: 403 from user-PAT → throws ApiClientError(403)
+  it('mintCliToken: 403 throws ApiClientError with status 403', async () => {
+    fetchMock.mockResolvedValue(mockRes(403, { error: { code: 'forbidden', message: 'forbidden' } }));
+    const err = await makeClient(fetchMock)
+      .mintCliToken({ telegramUserId: TG_USER_ID }, IK)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ApiClientError);
+    expect((err as ApiClientError).status).toBe(403);
+  });
+
+  // 17. listCliTokens: 200 returns array of PersonalAccessTokenDto
+  it('listCliTokens: 200 returns array of PersonalAccessTokenDto', async () => {
+    const tokens = [
+      {
+        id: '550e8400-e29b-41d4-a716-446655440001',
+        label: 'laptop',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastUsedAt: null,
+        expiresAt: null,
+      },
+    ];
+    fetchMock.mockResolvedValue(mockRes(200, tokens));
+    const result = await makeClient(fetchMock).listCliTokens();
+    expect(result).toEqual(tokens);
+  });
+
+  // 18. revokeCliToken: 204 returns true
+  it('revokeCliToken: 204 returns true', async () => {
+    fetchMock.mockResolvedValue(mockRes(204, null));
+    const result = await makeClient(fetchMock).revokeCliToken(
+      '550e8400-e29b-41d4-a716-446655440001',
+      IK,
+    );
+    expect(result).toBe(true);
+  });
+
+  // 19. revokeCliToken: 404 returns false (other-user's token → privacy-preserving)
+  it('revokeCliToken: 404 returns false without throwing', async () => {
+    fetchMock.mockResolvedValue(mockRes(404, null));
+    const result = await makeClient(fetchMock).revokeCliToken(
+      '550e8400-e29b-41d4-a716-446655440099',
+      IK,
+    );
+    expect(result).toBe(false);
+  });
+
+  // 20. getVersion: 200 returns VersionInfoDto
+  it('getVersion: 200 returns VersionInfoDto', async () => {
+    const versionDto = {
+      contractsVersion: '0.1.0',
+      commit: 'abc1234',
+      builtAt: '2026-01-01T00:00:00.000Z',
+    };
+    fetchMock.mockResolvedValue(mockRes(200, versionDto));
+    const result = await makeClient(fetchMock).getVersion();
+    expect(result).toEqual(versionDto);
+  });
 });

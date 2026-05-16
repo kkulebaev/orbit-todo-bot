@@ -31,6 +31,9 @@ import type {
   CommitSessionInput,
   CreateSessionInput,
   CreateTaskInput,
+  MintCliTokenInput,
+  MintCliTokenResponse,
+  PersonalAccessTokenDto,
   SessionDto,
   SessionKind,
   TaskDto,
@@ -38,12 +41,16 @@ import type {
   UpdateSessionInput,
   UpdateTaskInput,
   UserDto,
+  VersionInfoDto,
 } from '@orbit/contracts';
 import {
+  MintCliTokenResponseSchema,
+  PersonalAccessTokenDtoSchema,
   SessionDtoSchema,
   TaskDtoSchema,
   TaskListResponseSchema,
   UserDtoSchema,
+  VersionInfoDtoSchema,
 } from '@orbit/contracts';
 
 // ── Error classes ──────────────────────────────────────────────────────────────
@@ -150,6 +157,14 @@ export interface ApiViewerClient {
   updateSession(id: string, patch: UpdateSessionInput, idempotencyKey: string): Promise<SessionDto | null>;
   deleteSession(id: string, idempotencyKey: string): Promise<boolean>;
   commitSession(id: string, input: CommitSessionInput, idempotencyKey: string): Promise<TaskDto | null>;
+
+  // CLI tokens
+  mintCliToken(input: MintCliTokenInput, idempotencyKey: string): Promise<MintCliTokenResponse>;
+  listCliTokens(): Promise<PersonalAccessTokenDto[]>;
+  revokeCliToken(id: string, idempotencyKey: string): Promise<boolean>;
+
+  // Version
+  getVersion(): Promise<VersionInfoDto>;
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -266,6 +281,45 @@ export function createApiClient(cfg: ApiClientConfig) {
 
     const bodyParsed = await parseBody(res);
     throw new ApiClientError(res.status, bodyParsed);
+  }
+
+  /**
+   * Array request with per-element Zod validation.
+   * Always returns an array (never null).
+   */
+  async function reqArray<T>(
+    opts: FetchOpts & { itemSchema: ZodLike<T> },
+  ): Promise<T[]> {
+    const res = await doFetch(baseUrl, credential, userAgent, fetchImpl, opts, 1);
+
+    if (res.status !== 200) {
+      const bodyParsed = await parseBody(res);
+      throw new ApiClientError(res.status, bodyParsed);
+    }
+
+    const json = await parseBody(res);
+    if (!Array.isArray(json)) {
+      logger?.warn('api-client: expected array', { path: opts.path });
+      throw new Error(`api-client schema mismatch on ${opts.path}: expected array`);
+    }
+
+    const results: T[] = [];
+    for (let i = 0; i < json.length; i++) {
+      const parsed = opts.itemSchema.safeParse(json[i]);
+      if (!parsed.success) {
+        logger?.warn('api-client: schema mismatch', {
+          path: opts.path,
+          index: i,
+          issues: parsed.error.issues,
+        });
+        throw new Error(
+          `api-client schema mismatch on ${opts.path}[${i}]: ${JSON.stringify(parsed.error.issues)}`,
+        );
+      }
+      results.push(parsed.data);
+    }
+
+    return results;
   }
 
   return {
@@ -437,6 +491,57 @@ export function createApiClient(cfg: ApiClientConfig) {
             [200],
             [404],
           );
+        },
+
+        // ── CLI tokens ───────────────────────────────────────────────────
+
+        async mintCliToken(
+          input: MintCliTokenInput,
+          idempotencyKey: string,
+        ): Promise<MintCliTokenResponse> {
+          const result = await req(
+            {
+              ...v,
+              method: 'POST',
+              path: '/v1/cli/tokens',
+              body: input,
+              idempotencyKey,
+              schema: MintCliTokenResponseSchema,
+            },
+            [201],
+          );
+          return result!;
+        },
+
+        async listCliTokens(): Promise<PersonalAccessTokenDto[]> {
+          return reqArray({
+            ...v,
+            path: '/v1/cli/tokens',
+            itemSchema: PersonalAccessTokenDtoSchema,
+          });
+        },
+
+        async revokeCliToken(id: string, idempotencyKey: string): Promise<boolean> {
+          return reqBool(
+            { ...v, method: 'DELETE', path: `/v1/cli/tokens/${id}`, idempotencyKey },
+            204,
+            [404],
+          );
+        },
+
+        // ── Version ──────────────────────────────────────────────────────
+
+        async getVersion(): Promise<VersionInfoDto> {
+          const result = await req(
+            {
+              ...v,
+              path: '/v1/version',
+              schema: VersionInfoDtoSchema,
+              retryOnNetworkError: true,
+            },
+            [200],
+          );
+          return result!;
         },
       };
     },

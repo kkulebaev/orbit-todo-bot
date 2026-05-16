@@ -101,11 +101,14 @@ Base: `http://<api-host>/v1`. All endpoints require:
 - `BOT_TOKEN` — Telegram bot token (BotFather)
 - `WEBHOOK_SECRET` — random secret for Telegram webhook validation
 - `API_BASE_URL` — e.g. `http://<api-private-host>:8080`
-- `API_BOT_TOKEN` — shared Bearer with the API
+- `BOT_PAT` — bot's Personal Access Token plaintext (`orbit_pat_…`); replaces the legacy `API_BOT_TOKEN`
 
 ### `@orbit/api`
 - `DATABASE_URL` — PostgreSQL connection string
-- `API_BOT_TOKEN` — same value as the bot's
+- `BOT_PAT_USER_ID` — fixed UUID for the bot's system user row (seeded on first deploy)
+- `BOT_PAT_SHA256` — lowercase hex SHA-256 of `BOT_PAT` (seeded into DB; plaintext never stored)
+- `BOT_PAT_ALLOWED_CIDR` — comma-separated CIDRs allowed for bot-PAT impersonation (e.g. `fd00::/8,::1`)
+- `API_PUBLIC_EXPOSURE` — `true` to mount `/v1/*` on the public domain; `false` (default) for internal-only
 - `PORT` — Railway injects this; defaults to 8080
 
 See `.env.example` for a complete template.
@@ -196,6 +199,21 @@ curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
 - Webhook logs are truncated to 120 chars — keep that invariant.
 - List queries are scoped by `assignedToId = viewer.id` in API (mutations
   return 404, not 403, on owner mismatch — privacy preserved).
+
+---
+
+## Connecting the CLI
+
+The CLI client (`@orbit/cli`) is in P3 of the rollout — see
+[the plan](.omc/plans/cli-client-orbit.md). Once it ships:
+
+1. In Telegram: `/cli_link [optional label]`. The bot DMs a one-time token
+   matching `orbit_pat_…`.
+2. On your laptop: `orbit login --token <pasted-token> --base-url https://orbit-todo-api.up.railway.app`.
+3. `orbit whoami` confirms the connection.
+
+Tokens are per-user and revocable via `orbit tokens revoke <id>` or by
+deleting the row in the API DB.
 
 ---
 

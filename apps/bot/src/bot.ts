@@ -10,6 +10,7 @@ import { createApiClient } from '@orbit/api-client';
 import { fromApiTask, type TaskView } from './task-view.js';
 import { fromApiUser, type ViewerView } from './viewer-view.js';
 import { createApiSessionStore, type SessionStore } from './session-store.js';
+import { handleCliLink } from './cli-link.js';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? '';
 const BOT_PAT = process.env.BOT_PAT ?? '';
@@ -427,6 +428,14 @@ bot.command('done', async (ctx) => {
     console.error('[api] /done error', { err: String(e) });
     await ctx.reply(UNAVAILABLE_MSG);
   }
+});
+
+// /cli_link [label] — mint a per-user CLI PAT and DM the plaintext (once).
+// Telegram converts dashes to underscores in command names, so /cli_link covers
+// both /cli_link and /cli-link inputs.
+bot.command('cli_link', async (ctx) => {
+  if (!mustBePrivateChat(ctx)) return;
+  await handleCliLink(ctx, apiClient);
 });
 
 // --- Callback dispatcher (parseCallbackData) ---

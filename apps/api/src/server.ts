@@ -12,6 +12,8 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { usersRoutes } from "./routes/users.js";
 import { tasksRoutes } from "./routes/tasks.js";
 import { sessionsRoutes } from "./routes/sessions.js";
+import { cliTokensRoutes } from "./routes/cli-tokens.js";
+import { versionRoutes } from "./routes/version.js";
 import { startSessionCleanup } from "./cron/cleanup-sessions.js";
 
 export interface CreateAppOptions {
@@ -140,6 +142,8 @@ export function createApp(opts: CreateAppOptions): Express {
     v1.use("/users", usersRoutes());
     v1.use("/tasks", tasksRoutes(prisma));
     v1.use("/sessions", sessionsRoutes(prisma));
+    v1.use("/cli/tokens", cliTokensRoutes(prisma));
+    v1.use("/version", versionRoutes());
 
     app.use("/v1", v1);
   }

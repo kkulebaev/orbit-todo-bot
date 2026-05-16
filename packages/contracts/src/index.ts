@@ -9,3 +9,4 @@ export {
   parseDueDateInput,
   type ParseDueResult,
 } from "./dates.js";
+export * from "./cli-token.js";
