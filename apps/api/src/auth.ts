@@ -293,7 +293,8 @@ function cidrMatches(ipBytes: number[], cidr: string): boolean {
 
   let bits: number;
   if (prefix === null) {
-    bits = isV4 ? 128 : 128; // exact match
+    // No prefix → exact match across the full mapped 128-bit form.
+    bits = 128;
   } else if (isV4) {
     if (prefix > 32) return false;
     bits = 96 + prefix; // account for ::ffff: prefix
