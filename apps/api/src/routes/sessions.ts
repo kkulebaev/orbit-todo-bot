@@ -52,14 +52,28 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
     try {
       const parsed = CreateSessionInputSchema.safeParse(req.body);
       if (!parsed.success) throw badRequest("invalid body");
-      const { kind, payload, ttlSeconds } = parsed.data;
+      const { kind, payload, ttlSeconds, taskNumId } = parsed.data;
       const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+
+      // Optional task linkage (enables atomic `commit` with a taskPatch).
+      // We resolve numId → internal id with an owner check; mismatch → 404.
+      let taskId: string | null = null;
+      if (taskNumId !== undefined) {
+        const owned = await prisma.task.findFirst({
+          where: { numId: taskNumId, assignedToId: req.viewer!.id },
+          select: { id: true },
+        });
+        if (!owned) throw notFound();
+        taskId = owned.id;
+      }
+
       const session = await prisma.pendingAction.create({
         data: {
           kind,
           draftTitle: payload,
           expiresAt,
           userId: req.viewer!.id,
+          ...(taskId ? { taskId } : {}),
         },
       });
       res.status(201).json(toSessionDto(session));

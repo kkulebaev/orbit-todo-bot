@@ -24,6 +24,13 @@ export const CreateSessionInputSchema = z.object({
   kind: SessionKindSchema,
   payload: z.string().max(8000),
   ttlSeconds: z.number().int().min(60).max(86400).default(3600),
+  /**
+   * Optional task association. When provided, the API resolves the task by
+   * `numId` (scoped to the viewer) and stores its internal id on the session.
+   * Required for later `POST /v1/sessions/:id/commit` calls that include a
+   * `taskPatch` (atomic task.update + session.delete).
+   */
+  taskNumId: z.number().int().positive().optional(),
 });
 export type CreateSessionInput = z.infer<typeof CreateSessionInputSchema>;
 

@@ -14,9 +14,8 @@ export function fmtUser(u: Pick<User, 'username' | 'firstName'>) {
 }
 
 export function fmtTaskLine(t: {
-  id: string;
   title: string;
-  status: TaskStatus;
+  status: TaskStatus | 'open' | 'done';
 }) {
   const statusEmoji = t.status === 'done' ? '✅' : '📝';
   return `${statusEmoji} ${t.title}`;

@@ -1,5 +1,6 @@
 import { Context, InlineKeyboard } from 'grammy';
-import { PendingActionKind, PrismaClient, Task, TaskStatus, User } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { PendingActionKind, PrismaClient, Task, TaskStatus } from '@prisma/client';
 import { bot } from './bot-instance.js';
 import { DUE_SOON_DAYS, escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
@@ -10,6 +11,12 @@ import { computeDueSoonCutoff, parseDueDateInput } from './bot-logic.js';
 import { createApiClient } from './api-client.js';
 import { shadowCompare, type ShadowConfig } from './shadow.js';
 import { fromApiTask, fromPrismaTask, type TaskView } from './task-view.js';
+import { fromApiUser, fromPrismaUser, type ViewerView } from './viewer-view.js';
+import {
+  createApiSessionStore,
+  createPrismaSessionStore,
+  type SessionStore,
+} from './session-store.js';
 import type { SessionKind } from '@orbit/contracts';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -17,23 +24,41 @@ if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
 
 const prisma = new PrismaClient();
 
-// ── Shadow mode (P2 schema-canary) + READ_FROM_API (P3) ──────────────────────
+// ── Shadow mode (P2 schema-canary) + READ_FROM_API (P3) + WRITE_VIA_API (P4) ──
 // SHADOW_MODE=true: fire-and-forget API canary calls alongside Prisma reads.
 // READ_FROM_API=true: use API as primary source for task reads (Prisma fallback on error).
-// Both require API_BASE_URL + API_BOT_TOKEN to be set.
+// WRITE_VIA_API=true: route task WRITE operations + user upsert through @orbit/api.
+//   No Prisma fallback on API failure — this is the migration commit point.
+// All three flags require API_BASE_URL + API_BOT_TOKEN to be set.
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true';
 const READ_FROM_API = process.env.READ_FROM_API === 'true';
+const WRITE_VIA_API = process.env.WRITE_VIA_API === 'true';
 const API_BASE_URL = process.env.API_BASE_URL ?? '';
 const API_BOT_TOKEN = process.env.API_BOT_TOKEN ?? '';
 
 const _shadowApiClient =
-  (SHADOW_MODE || READ_FROM_API) && API_BASE_URL && API_BOT_TOKEN
+  (SHADOW_MODE || READ_FROM_API || WRITE_VIA_API) && API_BASE_URL && API_BOT_TOKEN
     ? createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN })
     : null;
 
 if (READ_FROM_API && !_shadowApiClient) {
   console.error('[read-from-api] READ_FROM_API=true but API_BASE_URL/API_BOT_TOKEN not set — falling back to Prisma for all reads');
 }
+
+if (WRITE_VIA_API && !_shadowApiClient) {
+  // Fail fast at startup: WRITE_VIA_API has no Prisma fallback, so missing API
+  // credentials would cause every mutation to fail at runtime.
+  throw new Error('WRITE_VIA_API=true but API_BASE_URL/API_BOT_TOKEN not set');
+}
+
+const UNAVAILABLE_MSG = '🛠 Сервис временно недоступен, попробуйте ещё раз чуть позже.';
+
+// SessionStore encapsulates the Prisma-vs-API switch for the pending-action
+// state machine. All session reads/writes go through this so handlers don't
+// need to branch on `WRITE_VIA_API` for every operation.
+const sessionStore: SessionStore = WRITE_VIA_API && _shadowApiClient
+  ? createApiSessionStore(_shadowApiClient)
+  : createPrismaSessionStore(prisma);
 
 const shadow: ShadowConfig = {
   enabled: SHADOW_MODE && _shadowApiClient !== null,
@@ -45,11 +70,20 @@ function mustBePrivateChat(ctx: Context) {
   return ctx.chat?.type === 'private';
 }
 
-async function upsertUserFromCtx(ctx: Context) {
+async function upsertUserFromCtx(ctx: Context): Promise<ViewerView> {
   const from = ctx.from;
   if (!from) throw new Error('No from in context');
 
-  return prisma.user.upsert({
+  if (WRITE_VIA_API && _shadowApiClient) {
+    // API path: server-side upsert happens on every authenticated request
+    // (`GET /v1/users/me` performs an upsert by Telegram user id). No
+    // Prisma fallback — failures bubble to the caller which renders a
+    // user-facing "service unavailable" message.
+    const dto = await _shadowApiClient.asViewer(String(from.id)).upsertMe();
+    return fromApiUser(dto);
+  }
+
+  const u = await prisma.user.upsert({
     where: { telegramUserId: BigInt(from.id) },
     update: {
       username: from.username ?? null,
@@ -61,9 +95,8 @@ async function upsertUserFromCtx(ctx: Context) {
       firstName: from.first_name ?? null,
     },
   });
+  return fromPrismaUser(u);
 }
-
-type PendingMode = 'my' | 'done';
 
 function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date = new Date()): string {
   if (!t.dueAt) return '';
@@ -71,7 +104,7 @@ function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date 
   return ` · ${overdue ? '⚠️' : '⏰'} <i>${text}</i>`;
 }
 
-async function getTasksForMode(mode: ListMode, viewer: User, page: number): Promise<{ tasks: TaskView[]; total: number }> {
+async function getTasksForMode(mode: ListMode, viewer: ViewerView, page: number): Promise<{ tasks: TaskView[]; total: number }> {
   // READ_FROM_API path — only for 'my' mode (API supports my|due-soon; 'done' stays on Prisma for P3).
   if (READ_FROM_API && _shadowApiClient && mode === 'my') {
     try {
@@ -292,7 +325,7 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 bot.command('start', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
   const me = await upsertUserFromCtx(ctx);
-  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+  await sessionStore.deleteAll(me);
   await showList(ctx, 'my', 0);
 });
 
@@ -315,7 +348,7 @@ bot.command('help', async (ctx) => {
 bot.command('cancel', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
   const me = await upsertUserFromCtx(ctx);
-  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+  await sessionStore.deleteAll(me);
   await ctx.reply('Ок, отменил ✅🪐');
 });
 
@@ -335,15 +368,27 @@ bot.command('add', async (ctx) => {
     return;
   }
 
-  const task = await prisma.task.create({
-    data: {
-      title: parsed.title,
-      createdById: me.id,
-      assignedToId: me.id,
-    },
-  });
-
-  await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
+  if (WRITE_VIA_API && _shadowApiClient) {
+    try {
+      const dto = await _shadowApiClient
+        .asViewer(String(me.telegramUserId))
+        .createTask({ title: parsed.title }, randomUUID());
+      await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine({ title: dto.title, status: dto.status })}`);
+    } catch (e) {
+      console.error('[write-via-api] createTask failed', { err: String(e) });
+      await ctx.reply(UNAVAILABLE_MSG);
+      return;
+    }
+  } else {
+    const task = await prisma.task.create({
+      data: {
+        title: parsed.title,
+        createdById: me.id,
+        assignedToId: me.id,
+      },
+    });
+    await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
+  }
   await showList(ctx, 'my', 0);
 });
 
@@ -364,15 +409,11 @@ bot.on('message:text', async (ctx, next) => {
   }
 
   const me = await upsertUserFromCtx(ctx);
-  const pending = await prisma.pendingAction.findFirst({
-    where: { userId: me.id },
-    orderBy: { createdAt: 'desc' },
-  });
+  const pending = await sessionStore.findLatest(me);
 
-  // Shadow call — schema-canary, fire-and-forget (P2).
-  // Only shadow when a pending action exists so we have a concrete kind for the API.
-  // PendingActionKind values match SessionKind values 1:1 (same enum strings).
-  if (pending) {
+  // Shadow call — schema-canary, fire-and-forget (P2). Skipped when
+  // WRITE_VIA_API is on (the API path already hit the live endpoint above).
+  if (pending && !WRITE_VIA_API) {
     void shadowCompare(shadow, `getLatestSession:${pending.kind}`, () =>
       shadow.apiClient!.asViewer(String(me.telegramUserId)).getLatestSession(
         pending.kind as unknown as SessionKind,
@@ -385,14 +426,8 @@ bot.on('message:text', async (ctx, next) => {
     // Ask for confirmation to avoid accidental task creation from random chat messages
     const titleDraft = text.slice(0, 200);
 
-    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-    await prisma.pendingAction.create({
-      data: {
-        kind: PendingActionKind.addTaskDraft,
-        userId: me.id,
-        draftTitle: titleDraft,
-      },
-    });
+    await sessionStore.deleteAll(me);
+    await sessionStore.create(me, 'addTaskDraft', { draftTitle: titleDraft });
 
     const kb = new InlineKeyboard()
       .text('✅ Добавить', 'v:addDraft:confirm')
@@ -405,36 +440,29 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (pending.kind === PendingActionKind.editTitle && pending.taskId) {
+  if (pending.kind === PendingActionKind.editTitle) {
     const newTitle = text.slice(0, 200);
-
-    const task = await prisma.task.findUnique({ where: { id: pending.taskId }, include: { assignedTo: true } });
-    if (!task) {
-      await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+    const ok = await sessionStore.commit(me, pending.id, { title: newTitle });
+    if (!ok) {
       await ctx.reply('Задача уже не существует 🙃');
       return;
     }
 
-    await prisma.task.update({ where: { id: pending.taskId }, data: { title: newTitle } });
-    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-
     const chatId = ctx.chat!.id;
-    if (pending.promptMessageId) {
-      try { await ctx.api.deleteMessage(chatId, pending.promptMessageId); } catch {}
-    }
-    if (pending.panelMessageId) {
-      try { await ctx.api.deleteMessage(chatId, pending.panelMessageId); } catch {}
-    }
+    const promptId = pending.payload.promptMessageId;
+    const panelId = pending.payload.panelMessageId;
+    if (promptId) { try { await ctx.api.deleteMessage(chatId, promptId); } catch {} }
+    if (panelId) { try { await ctx.api.deleteMessage(chatId, panelId); } catch {} }
 
     await ctx.reply('✅ Задача обновлена');
 
-    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
-    const page = pending.panelPage ?? 0;
+    const mode = pending.payload.panelMode ?? 'my';
+    const page = pending.payload.panelPage ?? 0;
     await showList(ctx, mode, page);
     return;
   }
 
-  if (pending.kind === PendingActionKind.setDueDate && pending.taskId) {
+  if (pending.kind === PendingActionKind.setDueDate) {
     const result = parseDueDateInput(text);
     if (!result.ok) {
       if (result.error === 'past') {
@@ -448,31 +476,25 @@ bot.on('message:text', async (ctx, next) => {
       return;
     }
 
-    const task = await prisma.task.findUnique({ where: { id: pending.taskId } });
-    if (!task) {
-      await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+    const ok = await sessionStore.commit(me, pending.id, {
+      dueAt: result.dueAt.toISOString(),
+      dueHasTime: result.dueHasTime,
+    });
+    if (!ok) {
       await ctx.reply('Задача уже не существует 🙃');
       return;
     }
 
-    await prisma.task.update({
-      where: { id: pending.taskId },
-      data: { dueAt: result.dueAt, dueHasTime: result.dueHasTime },
-    });
-    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-
     const chatId = ctx.chat!.id;
-    if (pending.promptMessageId) {
-      try { await ctx.api.deleteMessage(chatId, pending.promptMessageId); } catch {}
-    }
-    if (pending.panelMessageId) {
-      try { await ctx.api.deleteMessage(chatId, pending.panelMessageId); } catch {}
-    }
+    const promptId = pending.payload.promptMessageId;
+    const panelId = pending.payload.panelMessageId;
+    if (promptId) { try { await ctx.api.deleteMessage(chatId, promptId); } catch {} }
+    if (panelId) { try { await ctx.api.deleteMessage(chatId, panelId); } catch {} }
 
     await ctx.reply('✅ Срок установлен');
 
-    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
-    const page = pending.panelPage ?? 0;
+    const mode = pending.payload.panelMode ?? 'my';
+    const page = pending.payload.panelPage ?? 0;
     await showList(ctx, mode, page);
     return;
   }
@@ -480,31 +502,34 @@ bot.on('message:text', async (ctx, next) => {
   if (pending.kind === PendingActionKind.addTask) {
     const title = text.slice(0, 200);
 
-    await prisma.task.create({
-      data: {
-        title,
-        createdById: me.id,
-        assignedToId: me.id,
-      },
-    });
+    if (WRITE_VIA_API && _shadowApiClient) {
+      try {
+        await _shadowApiClient
+          .asViewer(String(me.telegramUserId))
+          .createTask({ title }, randomUUID());
+      } catch (e) {
+        console.error('[write-via-api] createTask failed', { err: String(e) });
+        await ctx.reply(UNAVAILABLE_MSG);
+        return;
+      }
+    } else {
+      await prisma.task.create({
+        data: { title, createdById: me.id, assignedToId: me.id },
+      });
+    }
+    await sessionStore.delete(me, pending.id);
 
-    await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
-
-    const mode = (pending.panelMode as PendingMode | null) ?? 'my';
-    const page = pending.panelPage ?? 0;
-    const panelMessageId = pending.panelMessageId ?? undefined;
+    const mode = pending.payload.panelMode ?? 'my';
+    const page = pending.payload.panelPage ?? 0;
+    const panelMessageId = pending.payload.panelMessageId;
     await showList(ctx, mode, page, panelMessageId);
     return;
   }
 
   if (pending.kind === PendingActionKind.addTaskDraft) {
-    // If user sends another message while draft is pending, treat it as updating the draft
+    // If user sends another message while draft is pending, treat it as updating the draft.
     const titleDraft = text.slice(0, 200);
-
-    await prisma.pendingAction.update({
-      where: { id: pending.id },
-      data: { draftTitle: titleDraft },
-    });
+    await sessionStore.updatePayload(me, pending.id, { draftTitle: titleDraft });
 
     const kb = new InlineKeyboard()
       .text('✅ Добавить', 'v:addDraft:confirm')
@@ -523,14 +548,14 @@ bot.on('message:text', async (ctx, next) => {
 bot.command('my', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
   const me = await upsertUserFromCtx(ctx);
-  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+  await sessionStore.deleteAll(me);
   await showList(ctx, 'my', 0);
 });
 
 bot.command('done', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
   const me = await upsertUserFromCtx(ctx);
-  await prisma.pendingAction.deleteMany({ where: { userId: me.id } });
+  await sessionStore.deleteAll(me);
   await showList(ctx, 'done', 0);
 });
 
@@ -564,10 +589,13 @@ bot.on('callback_query:data', async (ctx, next) => {
       showTaskDetail,
       upsertUserFromCtx,
       prisma,
+      sessionStore,
       PendingActionKind,
       InlineKeyboard,
       fmtUser,
       fmtTaskLine,
+      api: _shadowApiClient,
+      writeViaApi: WRITE_VIA_API,
     } as any);
     return;
   } catch (e) {

@@ -134,6 +134,7 @@ curl -H "Authorization: Bearer <API_BOT_TOKEN>" \
 | `API_BOT_TOKEN` | ✅ required | ✅ required | Shared Bearer; Railway shared variable |
 | `SHADOW_MODE` | optional | — | `true` to enable P2 schema-canary; default `false` |
 | `READ_FROM_API` | optional | — | `true` to route task READs through api (P3); default `false` |
+| `WRITE_VIA_API` | optional | — | `true` to route task WRITEs + PendingAction through api (P4); default `false`. **No Prisma fallback on API failure.** |
 | `DATABASE_URL` | P0–P4 only | ✅ required | Postgres plugin on api; remove from bot after P5 |
 | `PORT` | ✅ injected | ✅ injected | Railway sets this automatically |
 | `NODE_ENV` | `production` | `production` | |
@@ -227,14 +228,65 @@ Prereq: P2 shadow stable ≥ 24h with divergence < 0.5%.
 
 ---
 
-## P4 Cutover Notes (replicas)
+## P4 Cutover (WRITE via API)
 
-During P4 cutover (`WRITE_VIA_API=true`):
+Prereq: P3 stable ≥ 48h. API healthy (p95 < 200ms, success rate > 99.5%, zero
+5xx in the last hour).
 
-1. Set bot service **Num Replicas** to `1` and **Deploy Strategy** to `Recreate`.
-2. This causes a ~30–60s downtime while the single bot instance restarts.
-3. Document this maintenance window to users beforehand.
-4. After cutover is stable (30+ min monitoring), revert bot to rolling deploy.
+### Why P4 needs a special deploy strategy
 
-**Auto-abort trigger**: if error-rate exceeds 2% over 5 minutes, set
-`WRITE_VIA_API=false` and use the Railway rollback button.
+`WRITE_VIA_API=true` makes the API the only writer for task mutations and the
+pending-action state machine. **There is no Prisma fallback on API failure** —
+that's intentional, this flag is the migration commit point. To avoid a
+multi-writer window during deploy (old bot writing via Prisma + new bot
+writing via API simultaneously), the bot must run as a single instance with
+a stop-then-start deploy.
+
+### Railway settings change (one-time before cutover)
+
+`bot` service → **Settings → Deploy**:
+
+- **Num Replicas**: `1`  *(was: default; required for atomic cutover)*
+- **Deployment Strategy**: `Recreate`  *(was: rolling; required to avoid the
+  5–30s overlap window where two writers exist)*
+
+Acknowledge the expected downtime: **30–60s** between the old container
+stopping and the new one becoming ready. Telegram redelivers webhooks for up
+to 60s, so user-visible impact is minimal — clicks made during the window
+will land on the new container after restart.
+
+Once P5 (Prisma removal) is complete, revert **Deployment Strategy** to
+`Rolling`; the multi-writer concern no longer applies when there is only one
+writer (the API).
+
+### Cutover steps
+
+1. **Pre-flight check**
+   - `api` service: zero 5xx in the last hour (check Railway logs UI), p95
+     latency < 200ms.
+   - `bot` service: `READ_FROM_API=true` already set and stable for 48h+.
+2. **Apply the Railway settings change above** (`Num Replicas=1`,
+   `Deployment Strategy=Recreate`).
+3. **Flip the flag** in `bot` service variables:
+   - SET `WRITE_VIA_API=true`
+   - KEEP `READ_FROM_API=true`
+4. **Redeploy `bot`**. Wait for the healthcheck to report OK.
+5. **Monitor for 30 minutes**:
+   - Bot logs: combined 5xx + timeout rate < 2% over a 5-minute rolling
+     window. Grep for `[write-via-api]` warnings — each one is a hard user
+     failure (the user saw "сервис временно недоступен").
+   - Smoke-test the flows end-to-end: `/add`, mark-done / reopen, edit-title,
+     set-due-date, clear-due, ➕ → text confirm, raw-text → ✅ confirm.
+6. **If error rate > 2% over a 5-minute window — AUTO-ABORT** (see Rollback
+   below).
+7. After **30 minutes stable + 24 hours of observation** → P4 complete. Ready
+   for P5 (`@prisma/client` removal from `@orbit/bot`).
+
+### Rollback
+
+1. Set `WRITE_VIA_API=false` in the `bot` service environment.
+2. Redeploy the `bot` service. The bot returns to the P3 baseline (Prisma
+   direct writes, API reads).
+3. Investigate the root cause via `api` and `bot` Railway logs.
+4. Do **not** revert `Deployment Strategy: Rolling` until P5 starts — keeping
+   it on `Recreate` makes the next P4 retry idempotent.

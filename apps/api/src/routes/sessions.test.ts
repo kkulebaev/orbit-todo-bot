@@ -228,6 +228,57 @@ describe("sessions routes", () => {
     expect(taskAfter?.title).toBe("Committed title");
   });
 
+  it("POST /v1/sessions — links session to a task by taskNumId so a later commit can patch it atomically", async () => {
+    // 1. Create a task via API (telegramUserId "40").
+    const taskRes = await request(app)
+      .post("/v1/tasks")
+      .set(authHeaders("40"))
+      .send({ title: "Initial title" });
+    expect(taskRes.status).toBe(201);
+    const taskNumId = (taskRes.body as { numId: number }).numId;
+
+    // 2. Create a session linked to the task via the public POST endpoint.
+    const created = await request(app)
+      .post("/v1/sessions")
+      .set(authHeaders("40"))
+      .send({
+        kind: "editTitle",
+        payload: '{"panelPage":0}',
+        taskNumId,
+      });
+    expect(created.status).toBe(201);
+    const { id } = created.body as { id: string };
+
+    // 3. Commit with a taskPatch — should atomically update task + delete session.
+    const commit = await request(app)
+      .post(`/v1/sessions/${id}/commit`)
+      .set(authHeaders("40"))
+      .send({ taskPatch: { title: "Renamed via session" }, deleteSession: true });
+    expect(commit.status).toBe(200);
+    expect(commit.body).toMatchObject({ numId: taskNumId, title: "Renamed via session" });
+
+    // 4. Session is gone.
+    const after = await db.prisma.pendingAction.findUnique({ where: { id } });
+    expect(after).toBeNull();
+  });
+
+  it("POST /v1/sessions — 404 when taskNumId belongs to another user", async () => {
+    // Owner creates a task.
+    const owner = await request(app)
+      .post("/v1/tasks")
+      .set(authHeaders("50"))
+      .send({ title: "Owner's task" });
+    expect(owner.status).toBe(201);
+    const taskNumId = (owner.body as { numId: number }).numId;
+
+    // A different user tries to attach a session to that task.
+    const stolen = await request(app)
+      .post("/v1/sessions")
+      .set(authHeaders("51"))
+      .send({ kind: "editTitle", payload: "x", taskNumId });
+    expect(stolen.status).toBe(404);
+  });
+
   it("POST /v1/sessions/:id/commit — without taskPatch deletes session and returns 204", async () => {
     const created = await request(app)
       .post("/v1/sessions")

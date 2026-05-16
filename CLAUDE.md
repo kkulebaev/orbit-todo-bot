@@ -25,7 +25,7 @@ Root-level workspace commands:
 - `pnpm -r typecheck` — type-check all packages.
 - `pnpm -r test` — run Vitest in all packages once.
 - `pnpm -r build` — build all packages.
-- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`). Set `SHADOW_MODE=true` + `API_BASE_URL` + `API_BOT_TOKEN` to enable P2 schema-canary parallel reads. Set `READ_FROM_API=true` (P3) to route task READs through `@orbit/api` instead of Prisma (see `docs/railway-deploy.md`).
+- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`). Set `SHADOW_MODE=true` + `API_BASE_URL` + `API_BOT_TOKEN` to enable P2 schema-canary parallel reads. Set `READ_FROM_API=true` (P3) to route task READs through `@orbit/api` instead of Prisma. Set `WRITE_VIA_API=true` (P4) to also route task WRITEs + pending-action sessions through `@orbit/api` — no Prisma fallback on API failure (the user sees "🛠 Сервис временно недоступен"). See `docs/railway-deploy.md` for the cutover runbook.
 - `pnpm --filter @orbit/bot lint` — ESLint on bot source (warns on `@prisma/client` imports; becomes error on P5).
 - `pnpm --filter @orbit/api dev` — run the api in dev mode.
 - `pnpm prisma:generate` / `pnpm prisma:migrate` — Prisma client generation and `migrate deploy` (delegated to `@orbit/api`).
@@ -61,6 +61,8 @@ Three-layer split designed to keep grammY/Prisma out of unit tests:
 ### Pending-action state machine
 
 Multi-step UI flows (edit title, confirm draft add, "press ➕ then send text") are persisted as rows in the `PendingAction` table rather than in-memory. Each row carries `kind`, optional `taskId`, optional UI-return context (`panelMode`, `panelPage`, `panelMessageId`), and `draftTitle`. The `message:text` handler in `apps/bot/src/bot.ts` looks up the most recent `PendingAction` for the user and branches on `kind`. The `panelMessageId` is reused so we `editMessageText` the original panel instead of spamming new messages.
+
+All session reads/writes go through the `SessionStore` interface in `apps/bot/src/session-store.ts`. At startup the bot picks `createPrismaSessionStore(prisma)` (P0–P3) or `createApiSessionStore(apiClient)` (P4, when `WRITE_VIA_API=true`). The API-backed store serializes the UI metadata into an opaque JSON `payload` (see `session-payload.ts`) and links the row to its task via the optional `taskNumId` field on `POST /v1/sessions` so a later `POST /v1/sessions/:id/commit` can atomically update the task and delete the session in one `$transaction` server-side.
 
 ### "Message is not modified" handling
 
