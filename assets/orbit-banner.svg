@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="Orbit TODO Bot">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="Orbit TODO">
   <defs>
     <radialGradient id="bg" cx="0.25" cy="0.2" r="1.1">
       <stop offset="0" stop-color="#1b1740"/>
@@ -128,10 +128,10 @@
 
   <!-- title block -->
   <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial">
-    <text x="380" y="120" fill="url(#title)" font-size="62" font-weight="800" letter-spacing="-1.2">Orbit TODO Bot</text>
+    <text x="380" y="120" fill="url(#title)" font-size="62" font-weight="800" letter-spacing="-1.2">Orbit TODO</text>
 
     <text x="382" y="160" fill="#9fb3d6" font-size="20" font-weight="500" letter-spacing="0.2">
-      Telegram task manager · inline keyboards · Postgres + Prisma
+      Telegram bot + REST API · pnpm monorepo · Postgres
     </text>
 
     <!-- pill badges -->
@@ -147,11 +147,11 @@
         <text x="26" y="17" fill="#cfe1ff">grammY</text>
       </g>
       <g transform="translate(200 0)">
-        <rect x="0" y="0" width="76" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <rect x="0" y="0" width="86" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
         <circle cx="14" cy="13" r="4" fill="#ff6ea8"/>
-        <text x="26" y="17" fill="#cfe1ff">Prisma</text>
+        <text x="26" y="17" fill="#cfe1ff">REST API</text>
       </g>
-      <g transform="translate(286 0)">
+      <g transform="translate(296 0)">
         <rect x="0" y="0" width="86" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
         <circle cx="14" cy="13" r="4" fill="#7bf0a8"/>
         <text x="26" y="17" fill="#cfe1ff">Node 24</text>

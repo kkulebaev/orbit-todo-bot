@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/orbit-banner.svg" alt="Orbit TODO Bot" />
+  <img src="./assets/orbit-banner.svg" alt="Orbit TODO" />
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-informational" />
 </p>
 
-# Orbit TODO Bot
+# Orbit TODO
 
 A small, private Telegram TODO bot for personal use, families, and small teams.
 
