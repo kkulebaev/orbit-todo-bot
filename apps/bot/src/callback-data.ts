@@ -20,17 +20,6 @@ export type TaskCallback =
 
 export type CallbackData = ViewCallback | TaskCallback;
 
-function parseIntStrict(s: string) {
-  if (!/^-?\d+$/.test(s)) return null;
-  const n = Number(s);
-  if (!Number.isSafeInteger(n)) return null;
-  return n;
-}
-
-function parseMode(s: string) {
-  return s === 'my' || s === 'done' ? s : null;
-}
-
 export function parseCallbackData(raw: string): CallbackData | null {
   const s = raw.trim();
   if (!s) return null;

@@ -1,38 +1,27 @@
 {
-  "name": "todo-bot",
-  "version": "1.0.0",
-  "description": "",
+  "name": "orbit-monorepo",
+  "private": true,
   "type": "module",
-  "main": "index.js",
-  "scripts": {
-    "dev": "tsx --env-file-if-exists=.env src/bot.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node --env-file-if-exists=.env dist/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate deploy",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
   "engines": {
     "node": "24.x"
   },
   "packageManager": "pnpm@10.33.2",
-  "dependencies": {
-    "@prisma/client": "^6.19.1",
-    "express": "^5.2.1",
-    "grammy": "^1.41.0"
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:watch": "pnpm -r test:watch",
+    "dev:bot": "pnpm --filter @orbit/bot dev",
+    "dev:api": "pnpm --filter @orbit/api dev",
+    "prisma:generate": "pnpm --filter @orbit/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @orbit/api prisma:migrate"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
     "@types/node": "^25.4.0",
-    "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.0.18",
-    "prisma": "^6.19.1",
-    "supertest": "^7.2.2",
+    "eslint": "^9.18.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

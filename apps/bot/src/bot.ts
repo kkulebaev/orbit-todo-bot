@@ -163,7 +163,7 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
 }
 
 async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, page: number, editMessageId: number) {
-  const viewer = await upsertUserFromCtx(ctx);
+  await upsertUserFromCtx(ctx);
   const task = await prisma.task.findUnique({
     where: { numId: taskNumId },
     include: { assignedTo: true, createdBy: true },
