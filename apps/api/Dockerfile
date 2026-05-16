@@ -5,13 +5,19 @@ WORKDIR /app
 
 RUN corepack enable
 
-# Copy workspace manifests first for layer caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+# 1. Fetch all packages from lockfile into the virtual store.
+#    This layer is cached until pnpm-lock.yaml changes.
+COPY pnpm-lock.yaml ./
+RUN pnpm fetch
+
+# 2. Install workspace manifests and wire up node_modules (offline — no network).
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 
-RUN pnpm install --frozen-lockfile --filter @orbit/api...
+RUN pnpm install --offline --frozen-lockfile --filter @orbit/api...
 
+# 3. Copy sources and build.
 COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
 COPY apps/api/src ./apps/api/src
 COPY apps/api/prisma ./apps/api/prisma
@@ -21,20 +27,27 @@ COPY packages/contracts/tsconfig.json ./packages/contracts/tsconfig.json
 RUN pnpm --filter @orbit/api exec prisma generate
 RUN pnpm --filter @orbit/api run build
 
+# ---------------------------------------------------------------------------
+
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-RUN corepack enable
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+
+# Copy the pnpm virtual store + package-level node_modules (includes generated Prisma client).
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
+# Prisma schema is needed at runtime for migrate (run via Railway releaseCommand).
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 EXPOSE 8080
-CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && node --env-file-if-exists=.env apps/api/dist/server.js"]
+
+# `prisma migrate deploy` is intentionally NOT here.
+# Railway runs it as a releaseCommand before each deploy (see docs/railway-deploy.md).
+CMD ["node", "--env-file-if-exists=.env", "apps/api/dist/server.js"]

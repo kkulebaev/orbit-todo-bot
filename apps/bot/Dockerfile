@@ -5,36 +5,46 @@ WORKDIR /app
 
 RUN corepack enable
 
-# Copy workspace manifests first for layer caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+# 1. Fetch all packages from lockfile into the virtual store.
+#    This layer is cached until pnpm-lock.yaml changes.
+COPY pnpm-lock.yaml ./
+RUN pnpm fetch
+
+# 2. Install workspace manifests and wire up node_modules (offline — no network).
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/bot/package.json ./apps/bot/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 
-RUN pnpm install --frozen-lockfile --filter @orbit/bot...
+RUN pnpm install --offline --frozen-lockfile --filter @orbit/bot...
 
+# 3. Copy sources.
 COPY apps/bot/tsconfig.json ./apps/bot/tsconfig.json
 COPY apps/bot/src ./apps/bot/src
 COPY packages/contracts/src ./packages/contracts/src
 COPY packages/contracts/tsconfig.json ./packages/contracts/tsconfig.json
 
-# Generate Prisma client (bot still uses Prisma directly on P0-P4)
+# Generate Prisma client (bot still uses Prisma directly on P0–P4).
+# `prisma` CLI is pulled in as a peer dep of @prisma/client via autoInstallPeers.
 COPY apps/api/prisma ./apps/api/prisma
 RUN pnpm --filter @orbit/bot exec prisma generate --schema=../api/prisma/schema.prisma
 
 RUN pnpm --filter @orbit/bot run build
+
+# ---------------------------------------------------------------------------
 
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-RUN corepack enable
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml ./
 COPY apps/bot/package.json ./apps/bot/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=builder /app/apps/bot/node_modules ./apps/bot/node_modules
+
+# Copy the pnpm virtual store + package-level node_modules (includes generated Prisma client).
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/bot/node_modules ./apps/bot/node_modules
+
 COPY --from=builder /app/apps/bot/dist ./apps/bot/dist
 
 EXPOSE 3000
