@@ -9,11 +9,13 @@
  * that offset directly so we avoid Intl gymnastics.
  */
 
+import { PAGE_SIZE } from "@orbit/contracts";
+
 const BOT_TZ = "Europe/Moscow";
 const BOT_TZ_OFFSET = "+03:00";
 
 export const DUE_SOON_DAYS = 7;
-export const PAGE_SIZE = 8;
+export { PAGE_SIZE };
 
 const dueDayOnlyFmt = new Intl.DateTimeFormat("en-CA", {
   timeZone: BOT_TZ,

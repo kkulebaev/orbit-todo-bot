@@ -1,5 +1,5 @@
 import { InlineKeyboard } from 'grammy';
-import type { TaskStatus } from '@orbit/contracts';
+import { PAGE_SIZE, type TaskStatus } from '@orbit/contracts';
 
 export function escapeHtml(s: string) {
   return s
@@ -28,7 +28,7 @@ export function truncate(s: string, max = 60) {
 
 export type ListMode = 'my' | 'done';
 
-export const PAGE_SIZE = 8;
+export { PAGE_SIZE };
 
 // Open tasks with a deadline within this many calendar days (inclusive)
 // are surfaced above the rest, sorted by deadline ascending.
