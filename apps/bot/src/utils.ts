@@ -1,5 +1,5 @@
 import { InlineKeyboard } from 'grammy';
-import type { TaskStatus, User } from '@prisma/client';
+import type { TaskStatus } from '@orbit/contracts';
 
 export function escapeHtml(s: string) {
   return s
@@ -8,7 +8,7 @@ export function escapeHtml(s: string) {
     .replaceAll('>', '&gt;');
 }
 
-export function fmtUser(u: Pick<User, 'username' | 'firstName'>) {
+export function fmtUser(u: { username?: string | null; firstName?: string | null }) {
   if (u.username) return `@${u.username}`;
   return u.firstName ?? 'user';
 }
@@ -42,7 +42,7 @@ export function isTelegramMessageNotModifiedError(e: unknown) {
 export function kbList(
   mode: ListMode,
   page: number,
-  tasks: { numId: number; status: TaskStatus }[],
+  tasks: { numId: number; status: TaskStatus | 'open' | 'done' }[],
   total: number,
 ) {
   const kb = new InlineKeyboard();

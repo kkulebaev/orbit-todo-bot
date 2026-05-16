@@ -10,17 +10,17 @@ export default [
     },
     plugins: { "@typescript-eslint": tseslint },
     rules: {
-      "no-restricted-imports": ["warn", {
+      "no-restricted-imports": ["error", {
         paths: [
           {
             name: "@prisma/client",
-            message: "apps/bot must not import @prisma/client directly — will be enforced as error on P5.",
+            message: "apps/bot must not import @prisma/client directly (P5 enforcement).",
           },
         ],
         patterns: [
           {
             group: ["prisma/*", "*/prisma"],
-            message: "apps/bot must not import Prisma — will be enforced as error on P5.",
+            message: "apps/bot must not import Prisma (P5 enforcement).",
           },
         ],
       }],

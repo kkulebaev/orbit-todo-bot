@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 orbit-todo-bot/
 ├── apps/
-│   ├── bot/          # @orbit/bot — grammY + Express webhook (Prisma direct on P0-P4)
-│   └── api/          # @orbit/api — Express REST API + Prisma (the canonical DB owner from P1)
+│   ├── bot/          # @orbit/bot — grammY + Express webhook, pure HTTP client of @orbit/api (no Prisma)
+│   └── api/          # @orbit/api — Express REST API + Prisma (the canonical DB owner)
 └── packages/
     └── contracts/    # @orbit/contracts — Zod schemas + TS types (wire format source of truth)
 ```
@@ -25,8 +25,8 @@ Root-level workspace commands:
 - `pnpm -r typecheck` — type-check all packages.
 - `pnpm -r test` — run Vitest in all packages once.
 - `pnpm -r build` — build all packages.
-- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`). Set `SHADOW_MODE=true` + `API_BASE_URL` + `API_BOT_TOKEN` to enable P2 schema-canary parallel reads. Set `READ_FROM_API=true` (P3) to route task READs through `@orbit/api` instead of Prisma. Set `WRITE_VIA_API=true` (P4) to also route task WRITEs + pending-action sessions through `@orbit/api` — no Prisma fallback on API failure (the user sees "🛠 Сервис временно недоступен"). See `docs/railway-deploy.md` for the cutover runbook.
-- `pnpm --filter @orbit/bot lint` — ESLint on bot source (warns on `@prisma/client` imports; becomes error on P5).
+- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`). Requires `API_BASE_URL` and `API_BOT_TOKEN` to be set — the bot talks only to `@orbit/api` (no Prisma). See `docs/railway-deploy.md` for the deploy runbook.
+- `pnpm --filter @orbit/bot lint` — ESLint on bot source. `@prisma/client` imports are a hard error (no-restricted-imports, P5 enforcement).
 - `pnpm --filter @orbit/api dev` — run the api in dev mode.
 - `pnpm prisma:generate` / `pnpm prisma:migrate` — Prisma client generation and `migrate deploy` (delegated to `@orbit/api`).
 - Run a single test file: `pnpm --filter @orbit/bot exec vitest run src/callback-data.test.ts`. Filter by name: `pnpm --filter @orbit/bot exec vitest run -t "parses v:list"`.
@@ -54,7 +54,7 @@ Three-layer split designed to keep grammY/Prisma out of unit tests:
 
 3. **Pure logic (DI-friendly)**:
    - `apps/bot/src/callback-data.ts` — single source of truth for the wire format of `callback_data` strings. `parseCallbackData` and `formatCallbackData` are inverses; the `CallbackData` discriminated union drives exhaustiveness in the dispatcher's `default` branch (`const _x: never = parsed`). When adding a new button, edit the union, both functions, and the dispatcher together.
-   - `apps/bot/src/callback-dispatcher.ts` — receives a parsed `CallbackData` plus a `DispatchDeps` bag (Prisma, `showList`, `showTaskDetail`, `InlineKeyboard`, etc.). It contains all callback business logic and is fully unit-testable without `BOT_TOKEN`/`DATABASE_URL`. Real deps are injected from `bot.ts`; tests pass fakes.
+   - `apps/bot/src/callback-dispatcher.ts` — receives a parsed `CallbackData` plus a `DispatchDeps` bag (`api: ApiClient`, `showList`, `showTaskDetail`, `sessionStore`, `InlineKeyboard`, etc.). It contains all callback business logic and is fully unit-testable without `BOT_TOKEN`. Real deps are injected from `bot.ts`; tests pass fakes.
    - `apps/bot/src/callback-deduper.ts` — TTL+size-bounded `Map` to drop duplicate `callback_query.id` retries (Telegram redelivery). Created once per process in `bot.ts`.
    - `apps/bot/src/bot-logic.ts`, `utils.ts` — small pure helpers (`parseAddCommandText`, `escapeHtml`, `kbList`, `isTelegramMessageNotModifiedError`, `PAGE_SIZE`).
 
@@ -62,7 +62,7 @@ Three-layer split designed to keep grammY/Prisma out of unit tests:
 
 Multi-step UI flows (edit title, confirm draft add, "press ➕ then send text") are persisted as rows in the `PendingAction` table rather than in-memory. Each row carries `kind`, optional `taskId`, optional UI-return context (`panelMode`, `panelPage`, `panelMessageId`), and `draftTitle`. The `message:text` handler in `apps/bot/src/bot.ts` looks up the most recent `PendingAction` for the user and branches on `kind`. The `panelMessageId` is reused so we `editMessageText` the original panel instead of spamming new messages.
 
-All session reads/writes go through the `SessionStore` interface in `apps/bot/src/session-store.ts`. At startup the bot picks `createPrismaSessionStore(prisma)` (P0–P3) or `createApiSessionStore(apiClient)` (P4, when `WRITE_VIA_API=true`). The API-backed store serializes the UI metadata into an opaque JSON `payload` (see `session-payload.ts`) and links the row to its task via the optional `taskNumId` field on `POST /v1/sessions` so a later `POST /v1/sessions/:id/commit` can atomically update the task and delete the session in one `$transaction` server-side.
+All session reads/writes go through the `SessionStore` interface in `apps/bot/src/session-store.ts`. The only implementation is `createApiSessionStore(apiClient)` — the bot has no direct DB access. The store serializes UI metadata into an opaque JSON `payload` (see `session-payload.ts`) and links the row to its task via the optional `taskNumId` field on `POST /v1/sessions` so a later `POST /v1/sessions/:id/commit` can atomically update the task and delete the session in one `$transaction` server-side.
 
 ### "Message is not modified" handling
 

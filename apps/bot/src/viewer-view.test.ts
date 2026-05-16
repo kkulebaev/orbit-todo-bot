@@ -1,41 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fromApiUser, fromPrismaUser } from './viewer-view.js';
+import { fromApiUser } from './viewer-view.js';
 import type { UserDto } from '@orbit/contracts';
-
-describe('fromPrismaUser', () => {
-  it('maps all Prisma User fields, preserving BigInt and UUID', () => {
-    const prismaUser = {
-      id: '11111111-1111-1111-1111-111111111111',
-      numId: 7,
-      telegramUserId: BigInt('123456789'),
-      username: 'kk',
-      firstName: 'Konstantin',
-      // Extra Prisma fields should be ignored.
-      createdAt: new Date(),
-    };
-    const v = fromPrismaUser(prismaUser as any);
-    expect(v).toEqual({
-      id: '11111111-1111-1111-1111-111111111111',
-      numId: 7,
-      telegramUserId: BigInt('123456789'),
-      username: 'kk',
-      firstName: 'Konstantin',
-    });
-  });
-
-  it('preserves null username and firstName', () => {
-    const prismaUser = {
-      id: 'uuid-x',
-      numId: 1,
-      telegramUserId: BigInt(42),
-      username: null,
-      firstName: null,
-    };
-    const v = fromPrismaUser(prismaUser as any);
-    expect(v.username).toBeNull();
-    expect(v.firstName).toBeNull();
-  });
-});
 
 describe('fromApiUser', () => {
   it('casts telegramUserId string back to BigInt and clears id', () => {

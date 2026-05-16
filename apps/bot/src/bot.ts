@@ -1,70 +1,27 @@
 import { Context, InlineKeyboard } from 'grammy';
 import { randomUUID } from 'node:crypto';
-import { PendingActionKind, PrismaClient, Task, TaskStatus } from '@prisma/client';
 import { bot } from './bot-instance.js';
-import { DUE_SOON_DAYS, escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
+import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
 import { formatDueSmart, formatSmart } from './date-format.js';
-import { computeDueSoonCutoff, parseDueDateInput } from './bot-logic.js';
+import { parseDueDateInput } from './bot-logic.js';
 import { createApiClient } from './api-client.js';
-import { shadowCompare, type ShadowConfig } from './shadow.js';
-import { fromApiTask, fromPrismaTask, type TaskView } from './task-view.js';
-import { fromApiUser, fromPrismaUser, type ViewerView } from './viewer-view.js';
-import {
-  createApiSessionStore,
-  createPrismaSessionStore,
-  type SessionStore,
-} from './session-store.js';
-import type { SessionKind } from '@orbit/contracts';
+import { fromApiTask, type TaskView } from './task-view.js';
+import { fromApiUser, type ViewerView } from './viewer-view.js';
+import { createApiSessionStore, type SessionStore } from './session-store.js';
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
-
-const prisma = new PrismaClient();
-
-// ── Shadow mode (P2 schema-canary) + READ_FROM_API (P3) + WRITE_VIA_API (P4) ──
-// SHADOW_MODE=true: fire-and-forget API canary calls alongside Prisma reads.
-// READ_FROM_API=true: use API as primary source for task reads (Prisma fallback on error).
-// WRITE_VIA_API=true: route task WRITE operations + user upsert through @orbit/api.
-//   No Prisma fallback on API failure — this is the migration commit point.
-// All three flags require API_BASE_URL + API_BOT_TOKEN to be set.
-const SHADOW_MODE = process.env.SHADOW_MODE === 'true';
-const READ_FROM_API = process.env.READ_FROM_API === 'true';
-const WRITE_VIA_API = process.env.WRITE_VIA_API === 'true';
 const API_BASE_URL = process.env.API_BASE_URL ?? '';
 const API_BOT_TOKEN = process.env.API_BOT_TOKEN ?? '';
-
-const _shadowApiClient =
-  (SHADOW_MODE || READ_FROM_API || WRITE_VIA_API) && API_BASE_URL && API_BOT_TOKEN
-    ? createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN })
-    : null;
-
-if (READ_FROM_API && !_shadowApiClient) {
-  console.error('[read-from-api] READ_FROM_API=true but API_BASE_URL/API_BOT_TOKEN not set — falling back to Prisma for all reads');
+if (!API_BASE_URL || !API_BOT_TOKEN) {
+  throw new Error('Missing API_BASE_URL or API_BOT_TOKEN in env');
 }
 
-if (WRITE_VIA_API && !_shadowApiClient) {
-  // Fail fast at startup: WRITE_VIA_API has no Prisma fallback, so missing API
-  // credentials would cause every mutation to fail at runtime.
-  throw new Error('WRITE_VIA_API=true but API_BASE_URL/API_BOT_TOKEN not set');
-}
+const apiClient = createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN });
+const sessionStore: SessionStore = createApiSessionStore(apiClient);
 
 const UNAVAILABLE_MSG = '🛠 Сервис временно недоступен, попробуйте ещё раз чуть позже.';
-
-// SessionStore encapsulates the Prisma-vs-API switch for the pending-action
-// state machine. All session reads/writes go through this so handlers don't
-// need to branch on `WRITE_VIA_API` for every operation.
-const sessionStore: SessionStore = WRITE_VIA_API && _shadowApiClient
-  ? createApiSessionStore(_shadowApiClient)
-  : createPrismaSessionStore(prisma);
-
-const shadow: ShadowConfig = {
-  enabled: SHADOW_MODE && _shadowApiClient !== null,
-  apiClient: _shadowApiClient,
-  logger: console,
-};
 
 function mustBePrivateChat(ctx: Context) {
   return ctx.chat?.type === 'private';
@@ -73,29 +30,8 @@ function mustBePrivateChat(ctx: Context) {
 async function upsertUserFromCtx(ctx: Context): Promise<ViewerView> {
   const from = ctx.from;
   if (!from) throw new Error('No from in context');
-
-  if (WRITE_VIA_API && _shadowApiClient) {
-    // API path: server-side upsert happens on every authenticated request
-    // (`GET /v1/users/me` performs an upsert by Telegram user id). No
-    // Prisma fallback — failures bubble to the caller which renders a
-    // user-facing "service unavailable" message.
-    const dto = await _shadowApiClient.asViewer(String(from.id)).upsertMe();
-    return fromApiUser(dto);
-  }
-
-  const u = await prisma.user.upsert({
-    where: { telegramUserId: BigInt(from.id) },
-    update: {
-      username: from.username ?? null,
-      firstName: from.first_name ?? null,
-    },
-    create: {
-      telegramUserId: BigInt(from.id),
-      username: from.username ?? null,
-      firstName: from.first_name ?? null,
-    },
-  });
-  return fromPrismaUser(u);
+  const dto = await apiClient.asViewer(String(from.id)).upsertMe();
+  return fromApiUser(dto);
 }
 
 function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date = new Date()): string {
@@ -105,73 +41,13 @@ function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date 
 }
 
 async function getTasksForMode(mode: ListMode, viewer: ViewerView, page: number): Promise<{ tasks: TaskView[]; total: number }> {
-  // READ_FROM_API path — only for 'my' mode (API supports my|due-soon; 'done' stays on Prisma for P3).
-  if (READ_FROM_API && _shadowApiClient && mode === 'my') {
-    try {
-      const res = await _shadowApiClient.asViewer(String(viewer.telegramUserId)).listTasks({ mode: 'my', page });
-      return { tasks: res.items.map(fromApiTask), total: res.total };
-    } catch (e) {
-      console.warn('[read-from-api] listTasks error, using Prisma', { err: String(e) });
-    }
-  }
-
-  // Prisma path — always for 'done', and for 'my' when READ_FROM_API is off or API errored.
-  if (mode === 'done') {
-    const where = { status: 'done' as const, assignedToId: viewer.id };
-    const [tasks, total] = await Promise.all([
-      prisma.task.findMany({
-        where,
-        orderBy: [
-          // UX: newest completed first
-          { doneAt: 'desc' as const },
-          // Secondary sort for tasks without doneAt (should be rare)
-          { createdAt: 'desc' as const },
-        ],
-        skip: page * PAGE_SIZE,
-        take: PAGE_SIZE,
-      }),
-      prisma.task.count({ where }),
-    ]);
-    return { tasks: tasks.map(fromPrismaTask), total };
-  }
-
-  // mode === 'my' Prisma path:
-  //   1) "due-soon" zone (dueAt within DUE_SOON_DAYS calendar days, including overdue)
-  //      sorted by dueAt ASC — what's burning surfaces first.
-  //   2) Everything else (no dueAt, or dueAt past the horizon) by createdAt DESC.
-  // Prisma orderBy can't express the CASE, so the listing query is raw.
-  const where = { status: 'open' as const, assignedToId: viewer.id };
-  const cutoff = computeDueSoonCutoff(new Date(), DUE_SOON_DAYS);
-  const offset = page * PAGE_SIZE;
-  const [tasks, total] = await Promise.all([
-    prisma.$queryRaw<Task[]>`
-      SELECT *
-      FROM "Task"
-      WHERE "status" = 'open'::"TaskStatus" AND "assignedToId" = ${viewer.id}
-      ORDER BY
-        CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN 0 ELSE 1 END ASC,
-        CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN "dueAt" END ASC NULLS LAST,
-        "createdAt" DESC
-      LIMIT ${PAGE_SIZE} OFFSET ${offset}
-    `,
-    prisma.task.count({ where }),
-  ]);
-  return { tasks: tasks.map(fromPrismaTask), total };
+  const res = await apiClient.asViewer(String(viewer.telegramUserId)).listTasks({ mode, page });
+  return { tasks: res.items.map(fromApiTask), total: res.total };
 }
-
 
 async function showList(ctx: Context, mode: ListMode, page: number, editMessageId?: number) {
   const viewer = await upsertUserFromCtx(ctx);
   let { tasks, total } = await getTasksForMode(mode, viewer, page);
-
-  // Shadow call — schema-canary only, fire-and-forget (P2).
-  // Skip when READ_FROM_API is active (API already called in getTasksForMode — avoid double call).
-  // API only supports mode=my|due-soon; skip shadow for 'done' list.
-  if (mode === 'my' && !READ_FROM_API) {
-    void shadowCompare(shadow, `listTasks:my:p${page}`, () =>
-      shadow.apiClient!.asViewer(String(viewer.telegramUserId)).listTasks({ mode: 'my', page }),
-    );
-  }
 
   // If the requested page is past the last non-empty page (e.g., the last task on it
   // was just completed/deleted), clamp back to the last page that still has data.
@@ -228,7 +104,7 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
   }
 }
 
-function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, page: number) {
+function kbTaskDetail(taskNumId: number, status: 'open' | 'done', mode: ListMode, page: number) {
   const kb = new InlineKeyboard();
   if (status === 'open') kb.text('✅ Готово', `t:done:${taskNumId}:${mode}:${page}`);
   else kb.text('🔁 Вернуть', `t:reopen:${taskNumId}:${mode}:${page}`);
@@ -246,42 +122,12 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
 async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, page: number, editMessageId: number) {
   const viewer = await upsertUserFromCtx(ctx);
 
-  let task: TaskView | null = null;
-  // Tracks whether API responded (success or 404). If true, skip Prisma — API is source of truth.
-  let usedApiPath = false;
-
-  if (READ_FROM_API && _shadowApiClient) {
-    try {
-      const dto = await _shadowApiClient
-        .asViewer(String(viewer.telegramUserId))
-        .getTask(taskNumId);
-      usedApiPath = true;
-      if (dto !== null) task = fromApiTask(dto);
-      // dto === null → API 404: task doesn't exist or belongs to another user.
-      // API is source of truth in READ_FROM_API mode — no Prisma lookup.
-    } catch (e) {
-      // Network or 5xx error — api-client does not throw on 404.
-      console.warn('[read-from-api] getTask error, using Prisma', { err: String(e) });
-    }
-  } else {
-    // Shadow call — schema-canary, fire-and-forget (P2).
-    // Skipped when READ_FROM_API is active (API already called above).
-    void shadowCompare(shadow, `getTask:${taskNumId}`, () =>
-      shadow.apiClient!.asViewer(String(ctx.from!.id)).getTask(taskNumId),
-    );
-  }
-
-  if (task === null && !usedApiPath) {
-    // Prisma path: READ_FROM_API off, or API threw a network/5xx error.
-    const prismaTask = await prisma.task.findUnique({
-      where: { numId: taskNumId },
-      include: { assignedTo: true, createdBy: true },
-    });
-    if (prismaTask) task = fromPrismaTask(prismaTask);
-  }
+  const dto = await apiClient
+    .asViewer(String(viewer.telegramUserId))
+    .getTask(taskNumId);
+  const task = dto ? fromApiTask(dto) : null;
 
   if (!task) {
-    // Don't rely on callback popups (we may have already answered the callback).
     try {
       await ctx.api.editMessageText(ctx.chat!.id, editMessageId, '🙃 Задача не найдена.', {
         parse_mode: 'HTML',
@@ -293,9 +139,6 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
     }
     return;
   }
-
-  // UX: allow viewing tasks in the shared workspace (2-person bot). Actions are still gated elsewhere.
-  // If you want stricter privacy later, re-enable creator/assignee check.
 
   const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
   const createdLine = `Создано: ${formatSmart(task.createdAt)}`;
@@ -324,9 +167,14 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
 
 bot.command('start', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
-  const me = await upsertUserFromCtx(ctx);
-  await sessionStore.deleteAll(me);
-  await showList(ctx, 'my', 0);
+  try {
+    const me = await upsertUserFromCtx(ctx);
+    try { await sessionStore.deleteAll(me); } catch (e) { console.warn('[api] deleteAll warn', { err: String(e) }); }
+    await showList(ctx, 'my', 0);
+  } catch (e) {
+    console.error('[api] /start error', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+  }
 });
 
 bot.command('help', async (ctx) => {
@@ -347,15 +195,28 @@ bot.command('help', async (ctx) => {
 
 bot.command('cancel', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
-  const me = await upsertUserFromCtx(ctx);
-  await sessionStore.deleteAll(me);
-  await ctx.reply('Ок, отменил ✅🪐');
+  try {
+    const me = await upsertUserFromCtx(ctx);
+    try { await sessionStore.deleteAll(me); } catch (e) { console.warn('[api] deleteAll warn', { err: String(e) }); }
+    await ctx.reply('Ок, отменил ✅🪐');
+  } catch (e) {
+    console.error('[api] /cancel error', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+  }
 });
 
 bot.command('add', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
 
-  const me = await upsertUserFromCtx(ctx);
+  let me: ViewerView;
+  try {
+    me = await upsertUserFromCtx(ctx);
+  } catch (e) {
+    console.error('[api] upsertMe failed', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+    return;
+  }
+
   const text = (ctx.match as string | undefined)?.trim() ?? '';
   if (!text) {
     await ctx.reply('Напиши так: <code>/add купить молоко</code>', { parse_mode: 'HTML' });
@@ -368,31 +229,25 @@ bot.command('add', async (ctx) => {
     return;
   }
 
-  if (WRITE_VIA_API && _shadowApiClient) {
-    try {
-      const dto = await _shadowApiClient
-        .asViewer(String(me.telegramUserId))
-        .createTask({ title: parsed.title }, randomUUID());
-      await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine({ title: dto.title, status: dto.status })}`);
-    } catch (e) {
-      console.error('[write-via-api] createTask failed', { err: String(e) });
-      await ctx.reply(UNAVAILABLE_MSG);
-      return;
-    }
-  } else {
-    const task = await prisma.task.create({
-      data: {
-        title: parsed.title,
-        createdById: me.id,
-        assignedToId: me.id,
-      },
-    });
-    await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine(task)}`);
+  try {
+    const dto = await apiClient
+      .asViewer(String(me.telegramUserId))
+      .createTask({ title: parsed.title }, randomUUID());
+    await ctx.reply(`✅ Создал задачу!\n\n${fmtTaskLine({ title: dto.title, status: dto.status })}`);
+  } catch (e) {
+    console.error('[api] createTask failed', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+    return;
   }
   await showList(ctx, 'my', 0);
 });
 
-// Text input handler for pending actions (e.g., editing task title)
+// Text input handler for pending actions (e.g., editing task title).
+// Note: this handler is registered as a side-effect; it cannot be unit-tested directly
+// (see CLAUDE.md "Handler registration"). The API-failure → UNAVAILABLE_MSG paths below
+// are verified by inspection. Underlying `sessionStore.commit` is covered by tests in
+// callback-dispatcher.test.ts; extracting these branches into testable functions is in
+// the post-P5 follow-up backlog.
 bot.on('message:text', async (ctx, next) => {
   if (!mustBePrivateChat(ctx)) return;
 
@@ -408,18 +263,16 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  const me = await upsertUserFromCtx(ctx);
-  const pending = await sessionStore.findLatest(me);
-
-  // Shadow call — schema-canary, fire-and-forget (P2). Skipped when
-  // WRITE_VIA_API is on (the API path already hit the live endpoint above).
-  if (pending && !WRITE_VIA_API) {
-    void shadowCompare(shadow, `getLatestSession:${pending.kind}`, () =>
-      shadow.apiClient!.asViewer(String(me.telegramUserId)).getLatestSession(
-        pending.kind as unknown as SessionKind,
-      ),
-    );
+  let me: ViewerView;
+  try {
+    me = await upsertUserFromCtx(ctx);
+  } catch (e) {
+    console.error('[api] upsertMe failed in message:text', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+    return;
   }
+
+  const pending = await sessionStore.findLatest(me);
 
   if (!pending) {
     // UX: allow adding a task by simply sending a text message (without pressing ➕)
@@ -440,9 +293,16 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (pending.kind === PendingActionKind.editTitle) {
+  if (pending.kind === 'editTitle') {
     const newTitle = text.slice(0, 200);
-    const ok = await sessionStore.commit(me, pending.id, { title: newTitle });
+    let ok: boolean;
+    try {
+      ok = await sessionStore.commit(me, pending.id, { title: newTitle });
+    } catch (e) {
+      console.error('[api] editTitle commit failed', { err: String(e) });
+      await ctx.reply(UNAVAILABLE_MSG);
+      return;
+    }
     if (!ok) {
       await ctx.reply('Задача уже не существует 🙃');
       return;
@@ -462,7 +322,7 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (pending.kind === PendingActionKind.setDueDate) {
+  if (pending.kind === 'setDueDate') {
     const result = parseDueDateInput(text);
     if (!result.ok) {
       if (result.error === 'past') {
@@ -476,10 +336,17 @@ bot.on('message:text', async (ctx, next) => {
       return;
     }
 
-    const ok = await sessionStore.commit(me, pending.id, {
-      dueAt: result.dueAt.toISOString(),
-      dueHasTime: result.dueHasTime,
-    });
+    let ok: boolean;
+    try {
+      ok = await sessionStore.commit(me, pending.id, {
+        dueAt: result.dueAt.toISOString(),
+        dueHasTime: result.dueHasTime,
+      });
+    } catch (e) {
+      console.error('[api] setDueDate commit failed', { err: String(e) });
+      await ctx.reply(UNAVAILABLE_MSG);
+      return;
+    }
     if (!ok) {
       await ctx.reply('Задача уже не существует 🙃');
       return;
@@ -499,23 +366,17 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (pending.kind === PendingActionKind.addTask) {
+  if (pending.kind === 'addTask') {
     const title = text.slice(0, 200);
 
-    if (WRITE_VIA_API && _shadowApiClient) {
-      try {
-        await _shadowApiClient
-          .asViewer(String(me.telegramUserId))
-          .createTask({ title }, randomUUID());
-      } catch (e) {
-        console.error('[write-via-api] createTask failed', { err: String(e) });
-        await ctx.reply(UNAVAILABLE_MSG);
-        return;
-      }
-    } else {
-      await prisma.task.create({
-        data: { title, createdById: me.id, assignedToId: me.id },
-      });
+    try {
+      await apiClient
+        .asViewer(String(me.telegramUserId))
+        .createTask({ title }, randomUUID());
+    } catch (e) {
+      console.error('[api] createTask failed', { err: String(e) });
+      await ctx.reply(UNAVAILABLE_MSG);
+      return;
     }
     await sessionStore.delete(me, pending.id);
 
@@ -526,7 +387,7 @@ bot.on('message:text', async (ctx, next) => {
     return;
   }
 
-  if (pending.kind === PendingActionKind.addTaskDraft) {
+  if (pending.kind === 'addTaskDraft') {
     // If user sends another message while draft is pending, treat it as updating the draft.
     const titleDraft = text.slice(0, 200);
     await sessionStore.updatePayload(me, pending.id, { draftTitle: titleDraft });
@@ -547,16 +408,26 @@ bot.on('message:text', async (ctx, next) => {
 
 bot.command('my', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
-  const me = await upsertUserFromCtx(ctx);
-  await sessionStore.deleteAll(me);
-  await showList(ctx, 'my', 0);
+  try {
+    const me = await upsertUserFromCtx(ctx);
+    try { await sessionStore.deleteAll(me); } catch (e) { console.warn('[api] deleteAll warn', { err: String(e) }); }
+    await showList(ctx, 'my', 0);
+  } catch (e) {
+    console.error('[api] /my error', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+  }
 });
 
 bot.command('done', async (ctx) => {
   if (!mustBePrivateChat(ctx)) return;
-  const me = await upsertUserFromCtx(ctx);
-  await sessionStore.deleteAll(me);
-  await showList(ctx, 'done', 0);
+  try {
+    const me = await upsertUserFromCtx(ctx);
+    try { await sessionStore.deleteAll(me); } catch (e) { console.warn('[api] deleteAll warn', { err: String(e) }); }
+    await showList(ctx, 'done', 0);
+  } catch (e) {
+    console.error('[api] /done error', { err: String(e) });
+    await ctx.reply(UNAVAILABLE_MSG);
+  }
 });
 
 // --- Callback dispatcher (parseCallbackData) ---
@@ -567,7 +438,6 @@ bot.on('callback_query:data', async (ctx, next) => {
   const callbackQueryId: string | undefined = (ctx.callbackQuery as any)?.id;
   if (callbackQueryId && callbackDeduper.isDuplicate(callbackQueryId)) {
     try {
-      // Acknowledge duplicate clicks/updates to stop Telegram spinner.
       await ctx.answerCallbackQuery();
     } catch {}
     return;
@@ -579,7 +449,6 @@ bot.on('callback_query:data', async (ctx, next) => {
   (ctx as any)._matchedCallbackHandled = true;
 
   try {
-    // Answer early to avoid Telegram timeout (where applicable)
     await ctx.answerCallbackQuery();
   } catch {}
 
@@ -588,14 +457,11 @@ bot.on('callback_query:data', async (ctx, next) => {
       showList,
       showTaskDetail,
       upsertUserFromCtx,
-      prisma,
       sessionStore,
-      PendingActionKind,
       InlineKeyboard,
       fmtUser,
       fmtTaskLine,
-      api: _shadowApiClient,
-      writeViaApi: WRITE_VIA_API,
+      api: apiClient,
     } as any);
     return;
   } catch (e) {
@@ -628,15 +494,3 @@ bot.catch((err) => {
 
 // Note: bot.start() (long polling) is disabled for Render/webhook deployments.
 // Webhook server is implemented in src/server.ts and calls bot.handleUpdate().
-export async function diagnostics() {
-  console.log('Orbit bot handlers loaded');
-  console.log('DATABASE_URL:', process.env.DATABASE_URL);
-  try {
-    await prisma.user.count();
-    console.log('DB check: OK');
-  } catch (e) {
-    console.error('DB check: FAILED', e);
-  }
-}
-
-// noop: trigger CI

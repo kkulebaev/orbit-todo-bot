@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@orbit/contracts": "workspace:*",
-    "@prisma/client": "^6.19.1",
     "express": "^5.2.1",
     "grammy": "^1.41.0"
   },

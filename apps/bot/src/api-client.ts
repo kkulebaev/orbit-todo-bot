@@ -98,7 +98,7 @@ type FetchOpts = {
 
 export interface ApiViewerClient {
   // Tasks
-  listTasks(params?: { mode?: 'my' | 'due-soon'; page?: number }): Promise<TaskListResponse>;
+  listTasks(params?: { mode?: 'my' | 'due-soon' | 'done'; page?: number }): Promise<TaskListResponse>;
   getTask(numId: number): Promise<TaskDto | null>;
   createTask(input: CreateTaskInput, idempotencyKey: string): Promise<TaskDto>;
   updateTask(numId: number, patch: UpdateTaskInput, idempotencyKey: string): Promise<TaskDto | null>;
@@ -237,7 +237,7 @@ export function createApiClient(cfg: ApiClientConfig) {
         // ── Tasks ────────────────────────────────────────────────────────
 
         async listTasks(
-          params: { mode?: 'my' | 'due-soon'; page?: number } = {},
+          params: { mode?: 'my' | 'due-soon' | 'done'; page?: number } = {},
         ): Promise<TaskListResponse> {
           const qs = new URLSearchParams();
           if (params.mode) qs.set('mode', params.mode);

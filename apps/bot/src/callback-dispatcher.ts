@@ -29,49 +29,16 @@ export type DispatchDeps = {
   upsertUserFromCtx: (ctx: CtxLike) => Promise<ViewerView>;
 
   /**
-   * Session-machine I/O. The bot picks a Prisma- or API-backed implementation
-   * at startup based on `WRITE_VIA_API`; the dispatcher just forwards to it.
+   * Session-machine I/O — always API-backed after P5.
    */
   sessionStore: SessionStore;
 
-  prisma: {
-    task: {
-      delete: (args: { where: { numId: number } }) => Promise<unknown>;
-      findUnique: (args: unknown) => Promise<
-        | { id: string; numId: number; title: string; dueAt?: Date | null; dueHasTime?: boolean }
-        | null
-      >;
-      update: (args: unknown) => Promise<{ numId: number }>;
-      create: (args: unknown) => Promise<unknown>;
-    };
-    user?: {
-      findMany?: (args: unknown) => Promise<Array<{ numId: number; username?: string | null; firstName?: string | null }>>;
-      findUnique?: (args: unknown) => Promise<{ id: string } | null>;
-    };
-  };
-
-  PendingActionKind: {
-    addTask: string;
-    addTaskDraft: string;
-    editTitle: string;
-    setDueDate: string;
-  };
+  /** Always the live API client after P5 (required). */
+  api: ApiClient;
 
   InlineKeyboard: new () => InlineKeyboardLike;
   fmtUser: (u: { username?: string | null; firstName?: string | null }) => string;
   fmtTaskLine: (t: unknown) => string;
-
-  /**
-   * P4 cutover: when `writeViaApi` is true and `api` is non-null, task WRITE
-   * operations (create/update/delete) are routed through `@orbit/api` instead
-   * of Prisma. On API failure the user sees "service unavailable" — no Prisma
-   * fallback (this is the migration commit point).
-   *
-   * Session reads/writes always go through `sessionStore` (it picks the right
-   * backend itself).
-   */
-  api?: ApiClient | null;
-  writeViaApi?: boolean;
 };
 
 async function editOrReply(ctx: CtxLike, messageId: number | undefined, text: string) {
@@ -93,11 +60,11 @@ async function editOrReply(ctx: CtxLike, messageId: number | undefined, text: st
  * Handles parsed callback_data routing.
  *
  * This function is intentionally DI-friendly so we can unit-test routing
- * without BOT_TOKEN/DATABASE_URL or real Prisma.
+ * without BOT_TOKEN or real network calls. After P5 all task WRITE/READ
+ * operations go through `deps.api`; session ops go through `deps.sessionStore`.
  */
 export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, deps: DispatchDeps) {
   const messageId: number | undefined = ctx.callbackQuery?.message?.message_id;
-  const useApi = !!(deps.writeViaApi && deps.api);
 
   switch (parsed.kind) {
     case 'noop':
@@ -141,8 +108,8 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
       // the panel. Cancelling should collapse only the prompt, not overwrite it
       // with a list (the panel above is still accurate).
       if (
-        pending?.kind === deps.PendingActionKind.editTitle ||
-        pending?.kind === deps.PendingActionKind.setDueDate
+        pending?.kind === 'editTitle' ||
+        pending?.kind === 'setDueDate'
       ) {
         await editOrReply(ctx, messageId, '❌ Отмена.');
         return;
@@ -178,23 +145,15 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
 
       const slicedTitle = title.slice(0, 200);
       let createdLine: string;
-      if (useApi) {
-        try {
-          const dto = await deps.api!
-            .asViewer(String(me.telegramUserId))
-            .createTask({ title: slicedTitle }, randomUUID());
-          createdLine = deps.fmtTaskLine({ title: dto.title, status: dto.status });
-        } catch (e) {
-          console.error('[write-via-api] createTask (draft) failed', { err: String(e) });
-          await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
-          return;
-        }
-      } else {
-        const task = await deps.prisma.task.create({
-          data: { title: slicedTitle, createdById: me.id, assignedToId: me.id },
-          include: { assignedTo: true },
-        });
-        createdLine = deps.fmtTaskLine(task);
+      try {
+        const dto = await deps.api
+          .asViewer(String(me.telegramUserId))
+          .createTask({ title: slicedTitle }, randomUUID());
+        createdLine = deps.fmtTaskLine({ title: dto.title, status: dto.status });
+      } catch (e) {
+        console.error('[api] createTask (draft) failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
       }
 
       await deps.sessionStore.delete(me, pending.id);
@@ -230,19 +189,15 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
 
     case 't:delyes': {
       if (!messageId) return;
-      if (useApi) {
-        const me = await deps.upsertUserFromCtx(ctx);
-        try {
-          await deps.api!
-            .asViewer(String(me.telegramUserId))
-            .deleteTask(parsed.taskNumId, randomUUID());
-        } catch (e) {
-          console.error('[write-via-api] deleteTask failed', { err: String(e) });
-          await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
-          return;
-        }
-      } else {
-        await deps.prisma.task.delete({ where: { numId: parsed.taskNumId } });
+      const me = await deps.upsertUserFromCtx(ctx);
+      try {
+        await deps.api
+          .asViewer(String(me.telegramUserId))
+          .deleteTask(parsed.taskNumId, randomUUID());
+      } catch (e) {
+        console.error('[api] deleteTask failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
       }
       await deps.showList(ctx, parsed.mode, parsed.page, messageId);
       return;
@@ -251,36 +206,22 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
     case 't:edit': {
       const me = await deps.upsertUserFromCtx(ctx);
 
-      // Look up the task so we can render its current title in the prompt.
-      // We also need a stable id to link the new session to: prismaTaskId on
-      // the Prisma path, taskNumId on the API path.
       let taskTitle: string;
-      let prismaTaskId: string | undefined;
       let linkTaskNumId: number | undefined;
-      if (useApi) {
-        try {
-          const dto = await deps.api!
-            .asViewer(String(me.telegramUserId))
-            .getTask(parsed.taskNumId);
-          if (!dto) {
-            if (messageId) await deps.showList(ctx, parsed.mode, parsed.page, messageId);
-            return;
-          }
-          taskTitle = dto.title;
-          linkTaskNumId = dto.numId;
-        } catch (e) {
-          console.error('[write-via-api] getTask failed', { err: String(e) });
-          await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
-          return;
-        }
-      } else {
-        const task = await deps.prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
-        if (!task) {
+      try {
+        const dto = await deps.api
+          .asViewer(String(me.telegramUserId))
+          .getTask(parsed.taskNumId);
+        if (!dto) {
           if (messageId) await deps.showList(ctx, parsed.mode, parsed.page, messageId);
           return;
         }
-        taskTitle = task.title;
-        prismaTaskId = task.id;
+        taskTitle = dto.title;
+        linkTaskNumId = dto.numId;
+      } catch (e) {
+        console.error('[api] getTask failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
       }
 
       await deps.sessionStore.deleteAll(me);
@@ -300,7 +241,7 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
           panelMessageId: messageId,
           promptMessageId: prompt?.message_id,
         },
-        { taskNumId: linkTaskNumId, prismaTaskId },
+        { taskNumId: linkTaskNumId },
       );
       return;
     }
@@ -308,36 +249,22 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
     case 't:setDue': {
       const me = await deps.upsertUserFromCtx(ctx);
 
-      // Same dual lookup pattern as t:edit — we need the task's current dueAt
-      // to decide whether to render the "🗑 Очистить" button, plus a stable
-      // id to link the session for an atomic later commit.
       let currentDueAt: Date | string | null | undefined;
-      let prismaTaskId: string | undefined;
       let linkTaskNumId: number | undefined;
-      if (useApi) {
-        try {
-          const dto = await deps.api!
-            .asViewer(String(me.telegramUserId))
-            .getTask(parsed.taskNumId);
-          if (!dto) {
-            if (messageId) await deps.showList(ctx, parsed.mode, parsed.page, messageId);
-            return;
-          }
-          currentDueAt = dto.dueAt;
-          linkTaskNumId = dto.numId;
-        } catch (e) {
-          console.error('[write-via-api] getTask failed', { err: String(e) });
-          await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
-          return;
-        }
-      } else {
-        const task = await deps.prisma.task.findUnique({ where: { numId: parsed.taskNumId } });
-        if (!task) {
+      try {
+        const dto = await deps.api
+          .asViewer(String(me.telegramUserId))
+          .getTask(parsed.taskNumId);
+        if (!dto) {
           if (messageId) await deps.showList(ctx, parsed.mode, parsed.page, messageId);
           return;
         }
-        currentDueAt = task.dueAt;
-        prismaTaskId = task.id;
+        currentDueAt = dto.dueAt;
+        linkTaskNumId = dto.numId;
+      } catch (e) {
+        console.error('[api] getTask failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
       }
 
       await deps.sessionStore.deleteAll(me);
@@ -360,7 +287,7 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
           panelMessageId: messageId,
           promptMessageId: prompt?.message_id,
         },
-        { taskNumId: linkTaskNumId, prismaTaskId },
+        { taskNumId: linkTaskNumId },
       );
       return;
     }
@@ -375,10 +302,13 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
         return;
       }
 
-      // Atomic: clear task due fields + delete the session in one go.
-      // SessionStore picks Prisma `$transaction` or API `commitSession` based on
-      // the backend; the dispatcher doesn't care which.
-      await deps.sessionStore.commit(me, pending.id, { dueAt: null, dueHasTime: false });
+      try {
+        await deps.sessionStore.commit(me, pending.id, { dueAt: null, dueHasTime: false });
+      } catch (e) {
+        console.error('[api] clearDue commit failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
+      }
 
       const chatId = ctx.chat!.id;
       const promptId = pending.payload.promptMessageId ?? messageId;
@@ -399,34 +329,20 @@ export async function dispatchCallbackData(ctx: CtxLike, parsed: CallbackData, d
     case 't:reopen': {
       if (!messageId) return;
       const isDone = parsed.kind === 't:done';
-
-      if (useApi) {
-        const me = await deps.upsertUserFromCtx(ctx);
-        try {
-          // API derives `doneAt` server-side from the status transition.
-          await deps.api!
-            .asViewer(String(me.telegramUserId))
-            .updateTask(parsed.taskNumId, { status: isDone ? 'done' : 'open' }, randomUUID());
-        } catch (e) {
-          console.error('[write-via-api] updateTask status failed', { err: String(e) });
-          await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
-          return;
-        }
-      } else {
-        await deps.prisma.task.update({
-          where: { numId: parsed.taskNumId },
-          data: {
-            status: isDone ? 'done' : 'open',
-            doneAt: isDone ? new Date() : null,
-          },
-          include: { assignedTo: true, createdBy: true },
-        });
+      const me = await deps.upsertUserFromCtx(ctx);
+      try {
+        await deps.api
+          .asViewer(String(me.telegramUserId))
+          .updateTask(parsed.taskNumId, { status: isDone ? 'done' : 'open' }, randomUUID());
+      } catch (e) {
+        console.error('[api] updateTask status failed', { err: String(e) });
+        await editOrReply(ctx, messageId, UNAVAILABLE_MSG);
+        return;
       }
 
       await deps.showList(ctx, parsed.mode, parsed.page, messageId);
       return;
     }
-
 
     default: {
       const _x: never = parsed;

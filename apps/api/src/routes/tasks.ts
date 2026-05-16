@@ -37,6 +37,22 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       const viewer = req.viewer!;
       const skip = page * PAGE_SIZE;
 
+      if (mode === "done") {
+        const where = { status: "done" as const, assignedToId: viewer.id };
+        const [tasks, total] = await Promise.all([
+          prisma.task.findMany({
+            where,
+            orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
+            skip,
+            take: PAGE_SIZE,
+            include: { assignedTo: true, createdBy: true },
+          }),
+          prisma.task.count({ where }),
+        ]);
+        res.json({ items: tasks.map(toTaskDto), page, total });
+        return;
+      }
+
       if (mode === "due-soon") {
         const cutoff = computeDueSoonCutoff(new Date(), DUE_SOON_DAYS);
         const where = {

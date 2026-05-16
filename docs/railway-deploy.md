@@ -1,7 +1,7 @@
 # Railway Deployment Guide
 
 This guide covers deploying the `orbit-todo-bot` monorepo to Railway as two separate services:
-- **bot** — grammY webhook server (`@orbit/bot`)
+- **bot** — grammY webhook server (`@orbit/bot`), pure HTTP client of `@orbit/api`
 - **api** — REST API with Prisma (`@orbit/api`)
 
 ---
@@ -78,12 +78,11 @@ The bot communicates with the API over Railway's private network at
    | `WEBHOOK_SECRET` | `<random secret>` | Validates Telegram secret_token header |
    | `API_BASE_URL` | `http://api.railway.internal:8080` | Private network URL of the api service |
    | `API_BOT_TOKEN` | `<shared secret>` | Must match api's `API_BOT_TOKEN`; use Railway shared variable |
-   | `DATABASE_URL` | *(set on P0–P4 only)* | Remove after P5 cutover (bot stops using Prisma) |
    | `PORT` | *(injected by Railway)* | Default 3000 |
    | `NODE_ENV` | `production` | |
 
-   > **After P5**: remove `DATABASE_URL` from bot's environment entirely.
-   > Do NOT attach the Postgres plugin to the bot service.
+   > **Do NOT** attach the Postgres plugin to the bot service. `DATABASE_URL` is
+   > not used by the bot. The bot is a pure HTTP client of `@orbit/api`.
 
 ---
 
@@ -132,10 +131,7 @@ curl -H "Authorization: Bearer <API_BOT_TOKEN>" \
 | `WEBHOOK_SECRET` | ✅ required | — | Telegram webhook validation |
 | `API_BASE_URL` | ✅ required | — | `http://api.railway.internal:8080` |
 | `API_BOT_TOKEN` | ✅ required | ✅ required | Shared Bearer; Railway shared variable |
-| `SHADOW_MODE` | optional | — | `true` to enable P2 schema-canary; default `false` |
-| `READ_FROM_API` | optional | — | `true` to route task READs through api (P3); default `false` |
-| `WRITE_VIA_API` | optional | — | `true` to route task WRITEs + PendingAction through api (P4); default `false`. **No Prisma fallback on API failure.** |
-| `DATABASE_URL` | P0–P4 only | ✅ required | Postgres plugin on api; remove from bot after P5 |
+| `DATABASE_URL` | ❌ **not set** | ✅ required | Postgres plugin on api only |
 | `PORT` | ✅ injected | ✅ injected | Railway sets this automatically |
 | `NODE_ENV` | `production` | `production` | |
 | `LOG_LEVEL` | optional | optional | pino level; default `info` |
@@ -172,121 +168,42 @@ recovery enabled by default.
 ### Bot rollback
 Railway dashboard → `bot` service → **Deployments** → **Redeploy** previous.
 
-Feature-flag rollback (P2–P4): set `READ_FROM_API=false` or `WRITE_VIA_API=false`
-and redeploy — no migration needed.
+---
+
+## P5 — Post-cutover (stable state)
+
+The bot has no DB access. `@prisma/client` and `DATABASE_URL` are removed from
+`@orbit/bot`. The bot is a pure HTTP client of `@orbit/api`.
+
+**Railway settings (post-P5):**
+- `bot` service: default rolling deploy strategy (recreate no longer needed).
+- `api` service: `numReplicas=1` invariant preserved (in-memory LRU idempotency).
+
+**Bot env vars (P5+):** `BOT_TOKEN`, `WEBHOOK_SECRET`, `API_BASE_URL`, `API_BOT_TOKEN`.
+
+The following flags were removed in P5 and are no longer recognised by the bot:
+`WRITE_VIA_API`, `READ_FROM_API`, `SHADOW_MODE`, `DATABASE_URL`.
+Setting them has no effect.
 
 ---
 
-## P2 Rollout (shadow mode)
+## Historical: P2–P4 Migration Phases
 
-Shadow mode is a **schema-canary**: the bot makes a parallel HTTP call to the
-API for each READ flow and validates the response with Zod. The user always
-receives the Prisma result — the API call is fire-and-forget.
+> The P2 (shadow mode), P3 (READ via API), and P4 (WRITE via API) phased
+> migration is **complete**. These sections are kept for reference only.
+> The system is now fully on P5 (stable state). No feature flags are needed.
 
-After the `api` service is deployed and healthy:
+### P2 — Shadow mode (schema-canary)
+Shadow mode fired parallel API reads alongside Prisma reads and validated Zod
+schema shape. Zero data-canary — users always received the Prisma result.
+**Completed.** Flag removed: `SHADOW_MODE`.
 
-1. Add to the `bot` service environment variables:
-   - `API_BASE_URL=http://<api-internal-hostname>.railway.internal:8080`
-     (copy the private-network hostname from the `api` service Settings page)
-   - `API_BOT_TOKEN=<same value as the api service>` (Railway shared variable)
-   - `SHADOW_MODE=true`
-2. Redeploy the `bot` service.
-3. Observe Railway bot logs for **24 hours**. Expect entries like:
-   ```
-   shadow call { shadow: 'listTasks:my:p0', status: 'ok', ms: 12 }
-   ```
-   Warnings (`shadow call diverged`) indicate a schema mismatch between
-   `@orbit/api` and `@orbit/contracts`. Target: **< 0.5% divergence rate**.
-4. If the divergence rate is high — inspect the warning log's `issues` field to
-   find the contract drift. **Do NOT proceed to P3** until resolved.
-5. If green for 24 h — ready for P3 (`READ_FROM_API=true`).
+### P3 — READ via API
+Bot task READs (list + detail) routed through `@orbit/api` with Prisma fallback
+on error. **Completed.** Flag removed: `READ_FROM_API`.
 
-**Rollback**: set `SHADOW_MODE=false` and redeploy — zero database impact.
-
----
-
-## P3 Rollout (READ via API)
-
-Prereq: P2 shadow stable ≥ 24h with divergence < 0.5%.
-
-1. In Railway bot service variables, ADD:
-   - `READ_FROM_API=true`
-
-   > Keep `SHADOW_MODE=false` — enabling both would double API calls for the same reads.
-   > Turn `SHADOW_MODE` off before enabling `READ_FROM_API`.
-
-2. Redeploy the bot service.
-3. Monitor for **48h**:
-   - Bot logs: `[read-from-api]` warnings indicate API failures → bot falls back to Prisma
-     (user-visible result is OK, but each warning is an observability red flag).
-   - Target: API success rate > 99.5%, p95 latency < 200ms (Railway internal network).
-4. If green for 48h → ready for P4 (WRITE_VIA_API + Railway recreate strategy + cutover).
-5. Rollback: set `READ_FROM_API=false` and redeploy. Bot returns to Prisma direct reads.
-
-> **Note**: `mode=done` task list always uses Prisma until P4 — the API currently exposes only
-> `mode=my|due-soon`.
-
----
-
-## P4 Cutover (WRITE via API)
-
-Prereq: P3 stable ≥ 48h. API healthy (p95 < 200ms, success rate > 99.5%, zero
-5xx in the last hour).
-
-### Why P4 needs a special deploy strategy
-
-`WRITE_VIA_API=true` makes the API the only writer for task mutations and the
-pending-action state machine. **There is no Prisma fallback on API failure** —
-that's intentional, this flag is the migration commit point. To avoid a
-multi-writer window during deploy (old bot writing via Prisma + new bot
-writing via API simultaneously), the bot must run as a single instance with
-a stop-then-start deploy.
-
-### Railway settings change (one-time before cutover)
-
-`bot` service → **Settings → Deploy**:
-
-- **Num Replicas**: `1`  *(was: default; required for atomic cutover)*
-- **Deployment Strategy**: `Recreate`  *(was: rolling; required to avoid the
-  5–30s overlap window where two writers exist)*
-
-Acknowledge the expected downtime: **30–60s** between the old container
-stopping and the new one becoming ready. Telegram redelivers webhooks for up
-to 60s, so user-visible impact is minimal — clicks made during the window
-will land on the new container after restart.
-
-Once P5 (Prisma removal) is complete, revert **Deployment Strategy** to
-`Rolling`; the multi-writer concern no longer applies when there is only one
-writer (the API).
-
-### Cutover steps
-
-1. **Pre-flight check**
-   - `api` service: zero 5xx in the last hour (check Railway logs UI), p95
-     latency < 200ms.
-   - `bot` service: `READ_FROM_API=true` already set and stable for 48h+.
-2. **Apply the Railway settings change above** (`Num Replicas=1`,
-   `Deployment Strategy=Recreate`).
-3. **Flip the flag** in `bot` service variables:
-   - SET `WRITE_VIA_API=true`
-   - KEEP `READ_FROM_API=true`
-4. **Redeploy `bot`**. Wait for the healthcheck to report OK.
-5. **Monitor for 30 minutes**:
-   - Bot logs: combined 5xx + timeout rate < 2% over a 5-minute rolling
-     window. Grep for `[write-via-api]` warnings — each one is a hard user
-     failure (the user saw "сервис временно недоступен").
-   - Smoke-test the flows end-to-end: `/add`, mark-done / reopen, edit-title,
-     set-due-date, clear-due, ➕ → text confirm, raw-text → ✅ confirm.
-6. **If error rate > 2% over a 5-minute window — AUTO-ABORT** (see Rollback
-   below).
-7. After **30 minutes stable + 24 hours of observation** → P4 complete. Ready
-   for P5 (`@prisma/client` removal from `@orbit/bot`).
-
-### Rollback
-
-1. Set `WRITE_VIA_API=false` in the `bot` service environment.
-2. Redeploy the `bot` service. The bot returns to the P3 baseline (Prisma
-   direct writes, API reads).
-3. Investigate the root cause via `api` and `bot` Railway logs.
-4. Do **not** revert `Deployment Strategy: Rolling` until P5 starts — keeping
-   it on `Recreate` makes the next P4 retry idempotent.
+### P4 — WRITE via API (cutover)
+All task mutations and pending-action sessions routed through `@orbit/api`. No
+Prisma fallback — API failure surfaced as "сервис временно недоступен".
+Deployed with `Recreate` strategy to avoid dual-writer window.
+**Completed.** Flag removed: `WRITE_VIA_API`.

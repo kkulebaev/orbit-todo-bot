@@ -15,24 +15,33 @@ function makeCtx(messageId: number | null = 123) {
   };
 }
 
+/** Builds a fake api-client whose `.asViewer()` always returns the same spy
+ *  bundle. The returned `_view` lets tests assert calls per-method. */
+function createFakeApi() {
+  const v = {
+    updateTask: vi.fn(async () => ({ numId: 7, title: 'x', status: 'open' })),
+    deleteTask: vi.fn(async () => true),
+    createTask: vi.fn(async () => ({ numId: 99, title: 'created', status: 'open' })),
+    getTask: vi.fn(async () => ({
+      numId: 7,
+      title: 'купить хлеб',
+      status: 'open' as const,
+      dueAt: null as string | null,
+      dueHasTime: false,
+    })),
+  };
+  return {
+    asViewer: vi.fn(() => v),
+    _view: v,
+  };
+}
+
 /**
- * Builds default DispatchDeps with mocked prisma + sessionStore. Tests that
- * exercise the Prisma path use this as-is; tests that exercise the API path
- * (T3) override `api` + `writeViaApi`.
+ * Builds default DispatchDeps with a fake api-client and mocked sessionStore.
+ * All task I/O goes through `api` after P5.
  */
 function makeDeps() {
-  const prisma = {
-    task: {
-      delete: vi.fn(async () => {}),
-      findUnique: vi.fn(async () => null),
-      update: vi.fn(async () => ({ numId: 7 })),
-      create: vi.fn(async () => ({ id: 't1', title: 'x', status: 'open', assignedTo: { username: 'u' } })),
-    },
-    user: {
-      findMany: vi.fn(async () => [{ id: 'u1', numId: 1, username: 'kk' }]),
-      findUnique: vi.fn(async () => ({ id: 'u1', numId: 1, username: 'kk' })),
-    },
-  };
+  const api = createFakeApi();
 
   const sessionStore = {
     findLatest: vi.fn(async () => null),
@@ -57,9 +66,8 @@ function makeDeps() {
   }
 
   return {
-    prisma,
+    api,
     sessionStore,
-    PendingActionKind: { addTask: 'addTask', addTaskDraft: 'addTaskDraft', editTitle: 'editTitle', setDueDate: 'setDueDate' },
     InlineKeyboard,
     fmtUser: (u: any) => (u.username ? `@${u.username}` : 'user'),
     fmtTaskLine: () => 'line',
@@ -94,34 +102,34 @@ describe('callback-dispatcher routing', () => {
     expect(ctx.api.editMessageText).toHaveBeenCalled();
   });
 
-  it('routes t:delyes to task.delete then showList', async () => {
+  it('routes t:delyes to api.deleteTask then showList', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
 
     await dispatchCallbackData(ctx, { kind: 't:delyes', taskNumId: 5, mode: 'my', page: 0 }, deps as any);
 
-    expect(deps.prisma.task.delete).toHaveBeenCalledWith({ where: { numId: 5 } });
+    expect(deps.api._view.deleteTask).toHaveBeenCalledWith(5, expect.any(String));
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
   });
 
-  it('routes t:done to task.update then returns to the same list+page', async () => {
+  it('routes t:done to api.updateTask with status=done then returns to the same list+page', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
 
     await dispatchCallbackData(ctx, { kind: 't:done', taskNumId: 7, mode: 'my', page: 2 }, deps as any);
 
-    expect(deps.prisma.task.update).toHaveBeenCalled();
+    expect(deps.api._view.updateTask).toHaveBeenCalledWith(7, { status: 'done' }, expect.any(String));
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2, 123);
     expect(deps.showTaskDetail).not.toHaveBeenCalled();
   });
 
-  it('routes t:reopen to task.update then returns to the same list+page', async () => {
+  it('routes t:reopen to api.updateTask with status=open then returns to the same list+page', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
 
     await dispatchCallbackData(ctx, { kind: 't:reopen', taskNumId: 7, mode: 'done', page: 1 }, deps as any);
 
-    expect(deps.prisma.task.update).toHaveBeenCalled();
+    expect(deps.api._view.updateTask).toHaveBeenCalledWith(7, { status: 'open' }, expect.any(String));
     expect(deps.showList).toHaveBeenCalledWith(ctx, 'done', 1, 123);
     expect(deps.showTaskDetail).not.toHaveBeenCalled();
   });
@@ -143,7 +151,7 @@ describe('callback-dispatcher routing', () => {
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 
-  it('routes v:addDraft:confirm to task.create + sessionStore.delete + editMessageText + fresh /my panel', async () => {
+  it('routes v:addDraft:confirm to api.createTask + sessionStore.delete + editMessageText + fresh /my panel', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
     deps.sessionStore.findLatestOfKind = vi.fn(async () => ({
@@ -152,7 +160,7 @@ describe('callback-dispatcher routing', () => {
 
     await dispatchCallbackData(ctx, { kind: 'v:addDraft', action: 'confirm' }, deps as any);
 
-    expect(deps.prisma.task.create).toHaveBeenCalled();
+    expect(deps.api._view.createTask).toHaveBeenCalledWith({ title: 'купить молоко' }, expect.any(String));
     expect(deps.sessionStore.delete).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'me' }),
       'p1',
@@ -171,16 +179,15 @@ describe('callback-dispatcher routing', () => {
     expect(deps.showList).not.toHaveBeenCalled();
   });
 
-  it('t:edit creates editTitle session with panel context and sends prompt with old title in <code>', async () => {
+  it('t:edit reads task via api.getTask, creates editTitle session with panel context and sends prompt with old title in <code>', async () => {
     const ctx = makeCtx();
     (ctx.reply as any) = vi.fn(async () => ({ message_id: 555 }));
     const deps = makeDeps();
-    deps.prisma.task.findUnique = vi.fn(async () => ({
-      id: 'task-1', numId: 7, title: 'купить хлеб',
-    })) as any;
+    // api.getTask default returns { numId: 7, title: 'купить хлеб', ... }
 
     await dispatchCallbackData(ctx, { kind: 't:edit', taskNumId: 7, mode: 'done', page: 2 }, deps as any);
 
+    expect(deps.api._view.getTask).toHaveBeenCalledWith(7);
     expect(deps.sessionStore.create).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'me' }),
       'editTitle',
@@ -190,7 +197,7 @@ describe('callback-dispatcher routing', () => {
         panelMessageId: 123,
         promptMessageId: 555,
       },
-      { taskNumId: undefined, prismaTaskId: 'task-1' },
+      { taskNumId: 7 },
     );
 
     const replyArgs = (ctx.reply as any).mock.calls[0];
@@ -201,15 +208,34 @@ describe('callback-dispatcher routing', () => {
   it('t:edit HTML-escapes the old title to prevent injection', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    deps.prisma.task.findUnique = vi.fn(async () => ({
-      id: 'task-1', numId: 1, title: '<script>alert(1)</script>',
-    })) as any;
+    deps.api._view.getTask = vi.fn(async () => ({
+      numId: 1,
+      title: '<script>alert(1)</script>',
+      status: 'open' as const,
+      dueAt: null,
+      dueHasTime: false,
+    }));
 
     await dispatchCallbackData(ctx, { kind: 't:edit', taskNumId: 1, mode: 'my', page: 0 }, deps as any);
 
     const replyArgs = (ctx.reply as any).mock.calls[0];
     expect(replyArgs[0]).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(replyArgs[0]).not.toContain('<script>');
+  });
+
+  it('t:edit silently returns to the list when api.getTask returns null (task gone)', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.api._view.getTask = vi.fn(async () => null);
+
+    await dispatchCallbackData(
+      ctx,
+      { kind: 't:edit', taskNumId: 99, mode: 'my', page: 0 },
+      deps as any,
+    );
+
+    expect(deps.sessionStore.create).not.toHaveBeenCalled();
+    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
   });
 
   it('v:cancel collapses the prompt only when cancelling an edit-title flow', async () => {
@@ -252,15 +278,20 @@ describe('callback-dispatcher routing', () => {
     expect(deps.showList).not.toHaveBeenCalled();
   });
 
-  it('t:setDue creates setDueDate session and sends prompt without clear button when no current dueAt', async () => {
+  it('t:setDue reads task via api.getTask and creates setDueDate session without clear button when no dueAt', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    deps.prisma.task.findUnique = vi.fn(async () => ({
-      id: 'task-1', numId: 7, title: 'купить хлеб', dueAt: null, dueHasTime: false,
-    })) as any;
+    deps.api._view.getTask = vi.fn(async () => ({
+      numId: 7,
+      title: 'купить хлеб',
+      status: 'open' as const,
+      dueAt: null,
+      dueHasTime: false,
+    }));
 
     await dispatchCallbackData(ctx, { kind: 't:setDue', taskNumId: 7, mode: 'my', page: 1 }, deps as any);
 
+    expect(deps.api._view.getTask).toHaveBeenCalledWith(7);
     expect(deps.sessionStore.create).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'me' }),
       'setDueDate',
@@ -270,7 +301,7 @@ describe('callback-dispatcher routing', () => {
         panelMessageId: 123,
         promptMessageId: 555,
       },
-      { taskNumId: undefined, prismaTaskId: 'task-1' },
+      { taskNumId: 7 },
     );
 
     const replyArgs = (ctx.reply as any).mock.calls[0];
@@ -282,13 +313,13 @@ describe('callback-dispatcher routing', () => {
   it('t:setDue includes clear button when dueAt is set', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    deps.prisma.task.findUnique = vi.fn(async () => ({
-      id: 'task-1',
+    deps.api._view.getTask = vi.fn(async () => ({
       numId: 7,
-      title: 'купить хлеб',
-      dueAt: new Date('2026-04-30T15:00:00Z'),
+      title: 'x',
+      status: 'open' as const,
+      dueAt: '2026-04-30T15:00:00.000Z',
       dueHasTime: true,
-    })) as any;
+    }));
 
     await dispatchCallbackData(ctx, { kind: 't:setDue', taskNumId: 7, mode: 'my', page: 0 }, deps as any);
 
@@ -337,217 +368,32 @@ describe('callback-dispatcher routing', () => {
     expect(ctx.api.editMessageText).toHaveBeenCalled();
     expect(deps.showList).not.toHaveBeenCalled();
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WRITE_VIA_API=true paths (P4 cutover)
-//
-// These tests verify the dispatcher routes task WRITES through the @orbit/api
-// client when the bot is configured for P4 cutover. Session reads/writes
-// stay on the sessionStore abstraction in both cases — the dispatcher doesn't
-// branch session ops directly.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Builds a fake api-client whose `.asViewer()` always returns the same spy
- *  bundle. The returned `_view` lets tests assert calls per-method. */
-function createFakeApi() {
-  const v = {
-    updateTask: vi.fn(async () => ({ numId: 7, title: 'x', status: 'open' })),
-    deleteTask: vi.fn(async () => true),
-    createTask: vi.fn(async () => ({ numId: 99, title: 'created', status: 'open' })),
-    getTask: vi.fn(async () => ({
-      numId: 7,
-      title: 'купить хлеб',
-      status: 'open' as const,
-      dueAt: null as string | null,
-      dueHasTime: false,
-    })),
-  };
-  return {
-    asViewer: vi.fn(() => v),
-    _view: v,
-  };
-}
-
-describe('callback-dispatcher routing — WRITE_VIA_API=true', () => {
-  it('t:done routes to api.updateTask with status=done and skips prisma.task.update', async () => {
+  it('t:done surfaces "unavailable" message on API error (no fallback)', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    const api = createFakeApi();
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:done', taskNumId: 7, mode: 'my', page: 2 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.updateTask).toHaveBeenCalledWith(7, { status: 'done' }, expect.any(String));
-    expect(deps.prisma.task.update).not.toHaveBeenCalled();
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 2, 123);
-  });
-
-  it('t:reopen routes to api.updateTask with status=open and skips prisma.task.update', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:reopen', taskNumId: 7, mode: 'done', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.updateTask).toHaveBeenCalledWith(7, { status: 'open' }, expect.any(String));
-    expect(deps.prisma.task.update).not.toHaveBeenCalled();
-  });
-
-  it('t:done surfaces "unavailable" message on API error (no Prisma fallback)', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-    api._view.updateTask = vi.fn(async () => { throw new Error('boom'); });
+    deps.api._view.updateTask = vi.fn(async () => { throw new Error('boom'); });
 
     await dispatchCallbackData(
       ctx,
       { kind: 't:done', taskNumId: 7, mode: 'my', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
+      deps as any,
     );
 
-    expect(deps.prisma.task.update).not.toHaveBeenCalled();
     expect(ctx.api.editMessageText).toHaveBeenCalled();
     const editArgs = (ctx.api.editMessageText as any).mock.calls[0];
     expect(String(editArgs[2])).toContain('временно недоступен');
     expect(deps.showList).not.toHaveBeenCalled();
   });
 
-  it('t:delyes routes to api.deleteTask and skips prisma.task.delete', async () => {
+  it('v:add creates a session via sessionStore (api client not called for session ops)', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    const api = createFakeApi();
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:delyes', taskNumId: 5, mode: 'my', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.deleteTask).toHaveBeenCalledWith(5, expect.any(String));
-    expect(deps.prisma.task.delete).not.toHaveBeenCalled();
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
-  });
-
-  it('t:edit reads task via api.getTask and links the session by taskNumId (no prismaTaskId)', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:edit', taskNumId: 7, mode: 'my', page: 1 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.getTask).toHaveBeenCalledWith(7);
-    expect(deps.prisma.task.findUnique).not.toHaveBeenCalled();
-    expect(deps.sessionStore.create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'me' }),
-      'editTitle',
-      expect.objectContaining({
-        panelMode: 'my',
-        panelPage: 1,
-        panelMessageId: 123,
-        promptMessageId: 555,
-      }),
-      { taskNumId: 7, prismaTaskId: undefined },
-    );
-  });
-
-  it('t:setDue reads task via api.getTask and links the session by taskNumId', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-    // Pretend the task has a due date so we expect the "🗑 Очистить" button.
-    api._view.getTask = vi.fn(async () => ({
-      numId: 7,
-      title: 'x',
-      status: 'open',
-      dueAt: '2026-04-30T15:00:00.000Z',
-      dueHasTime: true,
-    })) as any;
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:setDue', taskNumId: 7, mode: 'my', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.getTask).toHaveBeenCalledWith(7);
-    expect(deps.prisma.task.findUnique).not.toHaveBeenCalled();
-    expect(deps.sessionStore.create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'me' }),
-      'setDueDate',
-      expect.objectContaining({ panelMode: 'my', panelPage: 0, panelMessageId: 123 }),
-      { taskNumId: 7, prismaTaskId: undefined },
-    );
-
-    const replyArgs = (ctx.reply as any).mock.calls[0];
-    expect(replyArgs[1].reply_markup.inline_keyboard).toEqual([
-      [{ text: '🗑 Очистить', callback_data: 'v:clearDue' }],
-      [{ text: '❌ Отмена', callback_data: 'v:cancel' }],
-    ]);
-  });
-
-  it('t:edit silently returns to the list when api.getTask returns null (task gone)', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-    api._view.getTask = vi.fn(async () => null);
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 't:edit', taskNumId: 99, mode: 'my', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(deps.sessionStore.create).not.toHaveBeenCalled();
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0, 123);
-  });
-
-  it('v:addDraft:confirm creates the task via api.createTask and deletes the draft session', async () => {
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
-    deps.sessionStore.findLatestOfKind = vi.fn(async () => ({
-      id: 'p1', kind: 'addTaskDraft', payload: { draftTitle: 'купить молоко' },
-    })) as any;
-
-    await dispatchCallbackData(
-      ctx,
-      { kind: 'v:addDraft', action: 'confirm' },
-      { ...deps, api, writeViaApi: true } as any,
-    );
-
-    expect(api._view.createTask).toHaveBeenCalledWith({ title: 'купить молоко' }, expect.any(String));
-    expect(deps.prisma.task.create).not.toHaveBeenCalled();
-    expect(deps.sessionStore.delete).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'me' }),
-      'p1',
-    );
-    expect(deps.showList).toHaveBeenCalledWith(ctx, 'my', 0);
-  });
-
-  it('v:add creates a session even in API mode (sessionStore is the single switch)', async () => {
-    // The dispatcher does not branch session ops on writeViaApi — sessionStore
-    // itself is API-backed at runtime. This test pins down that the dispatcher
-    // doesn't accidentally call any API client method for the session creation.
-    const ctx = makeCtx();
-    const deps = makeDeps();
-    const api = createFakeApi();
 
     await dispatchCallbackData(
       ctx,
       { kind: 'v:add', mode: 'my', page: 0 },
-      { ...deps, api, writeViaApi: true } as any,
+      deps as any,
     );
 
     expect(deps.sessionStore.deleteAll).toHaveBeenCalled();
@@ -556,34 +402,72 @@ describe('callback-dispatcher routing — WRITE_VIA_API=true', () => {
       'addTask',
       { panelMode: 'my', panelPage: 0, panelMessageId: 123 },
     );
-    // The API client should NOT have been touched — session ops go through
-    // sessionStore, not directly via deps.api.
-    expect(api._view.createTask).not.toHaveBeenCalled();
-    expect(api.asViewer).not.toHaveBeenCalled();
+    // The API client must NOT be called for session creation — goes through sessionStore.
+    expect(deps.api._view.createTask).not.toHaveBeenCalled();
+    expect(deps.api.asViewer).not.toHaveBeenCalled();
   });
 
-  it('v:clearDue commits via sessionStore on the API path too (single code path)', async () => {
+  it('v:clearDue: commit throws → surfaces UNAVAILABLE_MSG (T2 gap)', async () => {
     const ctx = makeCtx();
     const deps = makeDeps();
-    const api = createFakeApi();
+    deps.sessionStore.findLatestOfKind = vi.fn(async () => ({
+      id: 'p1',
+      kind: 'setDueDate',
+      payload: { panelMode: 'my', panelPage: 0, panelMessageId: 999, promptMessageId: 777 },
+    })) as any;
+    deps.sessionStore.commit = vi.fn(async () => { throw new Error('network timeout'); });
+
+    await dispatchCallbackData(ctx, { kind: 'v:clearDue' }, deps as any);
+
+    // Should reply with UNAVAILABLE_MSG — not throw out to grammY error handler.
+    const editCalls = (ctx.api.editMessageText as any).mock.calls;
+    const replyCalls = (ctx.reply as any).mock.calls;
+    const allMessages = [
+      ...editCalls.map((c: any[]) => String(c[2])),
+      ...replyCalls.map((c: any[]) => String(c[0])),
+    ];
+    expect(allMessages.some((m) => m.includes('временно недоступен'))).toBe(true);
+    expect(deps.showList).not.toHaveBeenCalled();
+  });
+
+  it('t:edit: api.getTask throws → surfaces UNAVAILABLE_MSG (T2 gap)', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
+    deps.api._view.getTask = vi.fn(async () => { throw new Error('API down'); });
+
+    await dispatchCallbackData(
+      ctx,
+      { kind: 't:edit', taskNumId: 7, mode: 'my', page: 0 },
+      deps as any,
+    );
+
+    // Should reply with UNAVAILABLE_MSG — not throw.
+    const editCalls = (ctx.api.editMessageText as any).mock.calls;
+    const replyCalls = (ctx.reply as any).mock.calls;
+    const allMessages = [
+      ...editCalls.map((c: any[]) => String(c[2])),
+      ...replyCalls.map((c: any[]) => String(c[0])),
+    ];
+    expect(allMessages.some((m) => m.includes('временно недоступен'))).toBe(true);
+    expect(deps.sessionStore.create).not.toHaveBeenCalled();
+  });
+
+  it('v:clearDue commits via sessionStore (api updateTask not called directly)', async () => {
+    const ctx = makeCtx();
+    const deps = makeDeps();
     deps.sessionStore.findLatestOfKind = vi.fn(async () => ({
       id: 'p1',
       kind: 'setDueDate',
       payload: { panelMode: 'my', panelPage: 0, panelMessageId: 999, promptMessageId: 777 },
     })) as any;
 
-    await dispatchCallbackData(
-      ctx,
-      { kind: 'v:clearDue' },
-      { ...deps, api, writeViaApi: true } as any,
-    );
+    await dispatchCallbackData(ctx, { kind: 'v:clearDue' }, deps as any);
 
     expect(deps.sessionStore.commit).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'me' }),
       'p1',
       { dueAt: null, dueHasTime: false },
     );
-    // Dispatcher must not bypass sessionStore on the API path.
-    expect(api._view.updateTask).not.toHaveBeenCalled();
+    expect(deps.api._view.updateTask).not.toHaveBeenCalled();
   });
 });

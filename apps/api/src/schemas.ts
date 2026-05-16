@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 export const ListTasksQuerySchema = z.object({
-  mode: z.enum(["my", "due-soon"]).default("my"),
+  mode: z.enum(["my", "due-soon", "done"]).default("my"),
   page: z.coerce.number().int().min(0).default(0),
 });
 export type ListTasksQuery = z.infer<typeof ListTasksQuerySchema>;
