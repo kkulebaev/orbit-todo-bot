@@ -78,6 +78,9 @@ importers:
 
   apps/bot:
     dependencies:
+      '@orbit/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@orbit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -97,6 +100,12 @@ importers:
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
+
+  packages/api-client:
+    dependencies:
+      '@orbit/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/contracts:
     dependencies:

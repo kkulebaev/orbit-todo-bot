@@ -1,28 +1,28 @@
-export const BOT_TZ = 'Europe/Moscow';
+export const ORBIT_TZ = 'Europe/Moscow';
 
 const dateOnlyFmt = new Intl.DateTimeFormat('en-CA', {
-  timeZone: BOT_TZ,
+  timeZone: ORBIT_TZ,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
 });
 
 const timeFmt = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: BOT_TZ,
+  timeZone: ORBIT_TZ,
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
 });
 
 const absoluteFmt = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: BOT_TZ,
+  timeZone: ORBIT_TZ,
   day: 'numeric',
   month: 'long',
   year: 'numeric',
 });
 
 const dayMonthFmt = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: BOT_TZ,
+  timeZone: ORBIT_TZ,
   day: 'numeric',
   month: 'long',
 });
@@ -43,7 +43,7 @@ function formatDayMonth(d: Date): string {
 }
 
 const yearFmt = new Intl.DateTimeFormat('en-CA', {
-  timeZone: BOT_TZ,
+  timeZone: ORBIT_TZ,
   year: 'numeric',
 });
 
@@ -102,4 +102,69 @@ export function formatDueSmart(
   if (diff === 1) return { text: `завтра${time}`, overdue: false };
   if (diff <= 7) return { text: `через ${diff} ${dayWord(diff)}${time}`, overdue: false };
   return { text: `${absoluteInTZ(dueAt, now)}${time}`, overdue: false };
+}
+
+// ── parseDueDateInput (date-portion only; moved from apps/bot/src/bot-logic.ts) ──
+
+export type ParseDueResult =
+  | { ok: true; dueAt: Date; dueHasTime: boolean }
+  | { ok: false; error: 'format' | 'past' };
+
+// Europe/Moscow is fixed UTC+3 (no DST since 2014). Anchor parses to this
+// offset directly so we avoid Intl gymnastics on input.
+const ORBIT_TZ_OFFSET = '+03:00';
+
+const dueDayOnlyFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ORBIT_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function isRealCalendarDate(day: number, month: number, year: number): boolean {
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
+export function parseDueDateInput(raw: string, now: Date = new Date()): ParseDueResult {
+  const text = raw.trim();
+  if (!text) return { ok: false, error: 'format' };
+
+  const m = text.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (!m) return { ok: false, error: 'format' };
+
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  const hourStr = m[4];
+  const minuteStr = m[5];
+  const hasTime = hourStr !== undefined;
+
+  if (year < 1900 || year > 3000) return { ok: false, error: 'format' };
+  if (!isRealCalendarDate(day, month, year)) return { ok: false, error: 'format' };
+  if (hasTime) {
+    if (Number(hourStr) > 23 || Number(minuteStr) > 59) return { ok: false, error: 'format' };
+  }
+
+  const yyyy = String(year).padStart(4, '0');
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  const hh = hasTime ? hourStr! : '00';
+  const mi = hasTime ? minuteStr! : '00';
+  const dueAt = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:00${ORBIT_TZ_OFFSET}`);
+  if (Number.isNaN(dueAt.getTime())) return { ok: false, error: 'format' };
+
+  if (hasTime) {
+    if (dueAt.getTime() < now.getTime()) return { ok: false, error: 'past' };
+  } else {
+    if (dueDayOnlyFmt.format(dueAt) < dueDayOnlyFmt.format(now)) {
+      return { ok: false, error: 'past' };
+    }
+  }
+
+  return { ok: true, dueAt, dueHasTime: hasTime };
 }

@@ -2,13 +2,13 @@
  * Thin HTTP client for @orbit/api.
  *
  * Design:
- *   const client = createApiClient({ baseUrl, token });
+ *   const client = createApiClient({ baseUrl, credential: { kind: 'service', token } });
  *   const api    = client.asViewer(String(from.id));
  *   const tasks  = await api.listTasks({ mode: 'my', page: 0 });
  *
  * `asViewer(telegramUserId)` returns a viewer-scoped client that injects
- * `X-Telegram-User-Id` on every request. Cheap to call per Telegram update —
- * the base config (baseUrl, token, fetchImpl) is shared.
+ * `X-Telegram-User-Id` on every request (service mode only). Cheap to call
+ * per Telegram update — the base config (baseUrl, credential, fetchImpl) is shared.
  *
  * Error policy:
  *   - 404 on GET            → null (not an error)
@@ -61,6 +61,18 @@ export class ApiNetworkError extends Error {
   }
 }
 
+// ── Credential discriminated union ────────────────────────────────────────────
+
+/**
+ * `kind: 'pat'`     — Personal Access Token; user-scoped, no X-Telegram-User-Id.
+ * `kind: 'service'` — Temporary bot service token retained for P1 only.
+ *                     P2 deletes this variant once the bot migrates to its own
+ *                     PAT with canImpersonate=true. Do NOT use in new code.
+ */
+export type Credential =
+  | { kind: 'pat'; token: string }
+  | { kind: 'service'; token: string };
+
 // ── Config & types ────────────────────────────────────────────────────────────
 
 type Logger = {
@@ -71,7 +83,12 @@ type Logger = {
 
 export type ApiClientConfig = {
   baseUrl: string;
-  token: string;
+  credential: Credential;
+  /**
+   * Optional User-Agent string sent on every request (e.g. `orbit-cli/0.1.0`).
+   * Omitted when not set.
+   */
+  userAgent?: string;
   /** Injected in tests; defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
   logger?: Logger;
@@ -93,6 +110,24 @@ type FetchOpts = {
   /** Allow one retry on network/timeout errors (GET-only). */
   retryOnNetworkError?: boolean;
 };
+
+// ── Header helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Redacts sensitive header values for safe logging.
+ * `authorization` and `idempotency-key` values are replaced with `'***'`.
+ * All other headers are passed through unchanged.
+ */
+export function redactSensitiveHeaders(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const REDACTED = new Set(['authorization', 'idempotency-key']);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    out[k] = REDACTED.has(k.toLowerCase()) ? '***' : v;
+  }
+  return out;
+}
 
 // ── Viewer client interface ───────────────────────────────────────────────────
 
@@ -123,7 +158,8 @@ function sleep(ms: number): Promise<void> {
 
 async function doFetch(
   baseUrl: string,
-  token: string,
+  credential: Credential,
+  userAgent: string | undefined,
   fetchImpl: typeof fetch,
   opts: FetchOpts,
   attempt: number,
@@ -131,11 +167,20 @@ async function doFetch(
   const { telegramUserId, method = 'GET', path, body, idempotencyKey } = opts;
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    'X-Telegram-User-Id': telegramUserId,
+    Authorization: `Bearer ${credential.token}`,
   };
+
+  // Only service-mode credentials send X-Telegram-User-Id.
+  // PAT mode does not — the server resolves the viewer from the PAT itself.
+  // P2 will introduce bot-PAT mode with canImpersonate=true that re-enables
+  // this header for callers with that bit set; out of scope for P0.
+  if (credential.kind === 'service') {
+    headers['X-Telegram-User-Id'] = telegramUserId;
+  }
+
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  if (userAgent) headers['User-Agent'] = userAgent;
 
   try {
     return await fetchImpl(`${baseUrl}${path}`, {
@@ -148,7 +193,7 @@ async function doFetch(
     // Single retry for GET requests on network/timeout errors.
     if (opts.retryOnNetworkError && attempt === 1) {
       await sleep(200);
-      return doFetch(baseUrl, token, fetchImpl, opts, 2);
+      return doFetch(baseUrl, credential, userAgent, fetchImpl, opts, 2);
     }
     throw new ApiNetworkError(err);
   }
@@ -164,11 +209,11 @@ async function parseBody(res: Response): Promise<unknown> {
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
-/** Convenience type: result of createApiClient(), used by ShadowConfig. */
+/** Convenience type: result of createApiClient(), used by consumers. */
 export type ApiClient = ReturnType<typeof createApiClient>;
 
 export function createApiClient(cfg: ApiClientConfig) {
-  const { baseUrl, token, fetchImpl = globalThis.fetch, logger } = cfg;
+  const { baseUrl, credential, userAgent, fetchImpl = globalThis.fetch, logger } = cfg;
 
   /**
    * Typed request with Zod validation.
@@ -181,7 +226,7 @@ export function createApiClient(cfg: ApiClientConfig) {
     okStatuses: readonly number[],
     nullStatuses: readonly number[] = [],
   ): Promise<T | null> {
-    const res = await doFetch(baseUrl, token, fetchImpl, opts, 1);
+    const res = await doFetch(baseUrl, credential, userAgent, fetchImpl, opts, 1);
 
     if (nullStatuses.includes(res.status)) return null;
 
@@ -215,7 +260,7 @@ export function createApiClient(cfg: ApiClientConfig) {
     successStatus: number,
     nullStatuses: readonly number[] = [],
   ): Promise<boolean> {
-    const res = await doFetch(baseUrl, token, fetchImpl, opts, 1);
+    const res = await doFetch(baseUrl, credential, userAgent, fetchImpl, opts, 1);
 
     if (nullStatuses.includes(res.status)) return false;
     if (res.status === successStatus) return true;

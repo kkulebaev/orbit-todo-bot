@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CallbackData, ListMode } from './callback-data.js';
-import type { ApiClient } from './api-client.js';
+import type { ApiClient } from '@orbit/api-client';
 import type { SessionStore } from './session-store.js';
 import type { ViewerView } from './viewer-view.js';
 import { escapeHtml, isTelegramMessageNotModifiedError } from './utils.js';

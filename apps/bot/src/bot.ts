@@ -5,9 +5,8 @@ import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kb
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
-import { formatDueSmart, formatSmart } from './date-format.js';
-import { parseDueDateInput } from './bot-logic.js';
-import { createApiClient } from './api-client.js';
+import { formatDueSmart, formatSmart, parseDueDateInput } from '@orbit/contracts';
+import { createApiClient } from '@orbit/api-client';
 import { fromApiTask, type TaskView } from './task-view.js';
 import { fromApiUser, type ViewerView } from './viewer-view.js';
 import { createApiSessionStore, type SessionStore } from './session-store.js';
@@ -18,7 +17,7 @@ if (!API_BASE_URL || !API_BOT_TOKEN) {
   throw new Error('Missing API_BASE_URL or API_BOT_TOKEN in env');
 }
 
-const apiClient = createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN });
+const apiClient = createApiClient({ baseUrl: API_BASE_URL, credential: { kind: 'service', token: API_BOT_TOKEN } });
 const sessionStore: SessionStore = createApiSessionStore(apiClient);
 
 const UNAVAILABLE_MSG = '🛠 Сервис временно недоступен, попробуйте ещё раз чуть позже.';

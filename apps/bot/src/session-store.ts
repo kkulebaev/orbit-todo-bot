@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SessionKind, UpdateTaskInput } from '@orbit/contracts';
-import type { ApiClient } from './api-client.js';
+import type { ApiClient } from '@orbit/api-client';
 import type { ViewerView } from './viewer-view.js';
 import { decodePayload, encodePayload, type SessionPayload } from './session-payload.js';
 

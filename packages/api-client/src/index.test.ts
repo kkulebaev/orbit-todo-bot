@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiClientError, ApiNetworkError, createApiClient } from './api-client.js';
+import { ApiClientError, ApiNetworkError, createApiClient, redactSensitiveHeaders } from './index.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const BASE_URL = 'https://api.example.com';
-const TOKEN = 'secret-token';
+const SVC_CREDENTIAL = { kind: 'service' as const, token: 'svc-token' };
+const PAT_CREDENTIAL = { kind: 'pat' as const, token: 'pat-token' };
 const TG_USER_ID = '999888777';
 const IK = 'idem-key-abc';
 
@@ -34,10 +35,10 @@ function mockRes(status: number, body: unknown = null): Response {
   return { status, json: async () => body } as unknown as Response;
 }
 
-function makeClient(fetchMock: ReturnType<typeof vi.fn>) {
+function makeClient(fetchMock: ReturnType<typeof vi.fn>, credential = SVC_CREDENTIAL) {
   return createApiClient({
     baseUrl: BASE_URL,
-    token: TOKEN,
+    credential,
     fetchImpl: fetchMock as unknown as typeof fetch,
   }).asViewer(TG_USER_ID);
 }
@@ -90,10 +91,10 @@ describe('api-client', () => {
     );
   });
 
-  // 6. upsertMe → correct X-Telegram-User-Id header on GET
-  it('upsertMe: sends correct X-Telegram-User-Id header', async () => {
+  // 6. upsertMe → correct X-Telegram-User-Id header on GET (service mode)
+  it('upsertMe: service mode sends correct X-Telegram-User-Id header', async () => {
     fetchMock.mockResolvedValue(mockRes(200, USER_DTO));
-    await makeClient(fetchMock).upsertMe();
+    await makeClient(fetchMock, SVC_CREDENTIAL).upsertMe();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)['X-Telegram-User-Id']).toBe(TG_USER_ID);
   });
@@ -136,5 +137,53 @@ describe('api-client', () => {
   it('deleteTask: 404 returns false', async () => {
     fetchMock.mockResolvedValue(mockRes(404, null));
     expect(await makeClient(fetchMock).deleteTask(99, IK)).toBe(false);
+  });
+
+  // 12. Credential union: PAT mode does NOT send X-Telegram-User-Id (AC-P0-7)
+  it('credential union: PAT mode does not send X-Telegram-User-Id header', async () => {
+    fetchMock.mockResolvedValue(mockRes(200, USER_DTO));
+    await makeClient(fetchMock, PAT_CREDENTIAL).upsertMe();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['X-Telegram-User-Id']).toBeUndefined();
+  });
+
+  // 13. redactSensitiveHeaders unit test (AC-P0-7)
+  it('redactSensitiveHeaders: masks Authorization and Idempotency-Key, passes Content-Type through', () => {
+    const input = {
+      Authorization: 'Bearer super-secret-token',
+      'Idempotency-Key': 'k1-plaintext',
+      'Content-Type': 'application/json',
+    };
+    const out = redactSensitiveHeaders(input);
+    expect(out['Authorization']).toBe('***');
+    expect(out['Idempotency-Key']).toBe('***');
+    expect(out['Content-Type']).toBe('application/json');
+  });
+
+  // 14. Logger integration: token and idempotency-key plaintext must not appear in logger output (AC-P0-7)
+  it('logger integration: token and idempotency-key plaintext never appear in warn output', async () => {
+    const warnMessages: string[] = [];
+    const captureLogger = {
+      info: () => {},
+      warn: (...args: unknown[]) => { warnMessages.push(JSON.stringify(args)); },
+      error: () => {},
+    };
+
+    // Trigger a schema-mismatch warn by returning an invalid body shape
+    fetchMock.mockResolvedValue(mockRes(201, { numId: 'bad', title: 123 }));
+    const client = createApiClient({
+      baseUrl: BASE_URL,
+      credential: SVC_CREDENTIAL,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      logger: captureLogger,
+    });
+
+    await client.asViewer(TG_USER_ID).createTask({ title: 'x' }, IK).catch(() => {});
+
+    const combined = warnMessages.join('\n');
+    // Token plaintext must not appear in any logger output
+    expect(combined).not.toMatch(/svc-token/);
+    // Idempotency-key plaintext must not appear in any logger output
+    expect(combined).not.toMatch(/idem-key-abc/);
   });
 });
