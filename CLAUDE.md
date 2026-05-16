@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Workspace layout
 
 ```
-orbit-todo-bot/
+orbit-todo/
 ├── apps/
 │   ├── bot/          # @orbit/bot — grammY + Express webhook, pure HTTP client of @orbit/api (no Prisma)
 │   └── api/          # @orbit/api — Express REST API + Prisma (the canonical DB owner)

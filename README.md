@@ -53,7 +53,7 @@ A small, private Telegram TODO bot for personal use, families, and small teams.
 ## Workspace layout
 
 ```
-orbit-todo-bot/
+orbit-todo/
 ├── apps/
 │   ├── bot/                  # @orbit/bot — Telegram webhook, pure HTTP client
 │   └── api/                  # @orbit/api — REST + Prisma

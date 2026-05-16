@@ -1,6 +1,6 @@
 # Railway Deployment Guide
 
-This guide covers deploying the `orbit-todo-bot` monorepo to Railway as two separate services:
+This guide covers deploying the `orbit-todo` monorepo to Railway as two separate services:
 - **bot** — grammY webhook server (`@orbit/bot`), pure HTTP client of `@orbit/api`
 - **api** — REST API with Prisma (`@orbit/api`)
 
