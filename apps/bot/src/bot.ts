@@ -9,6 +9,7 @@ import { formatDueSmart, formatSmart } from './date-format.js';
 import { computeDueSoonCutoff, parseDueDateInput } from './bot-logic.js';
 import { createApiClient } from './api-client.js';
 import { shadowCompare, type ShadowConfig } from './shadow.js';
+import { fromApiTask, fromPrismaTask, type TaskView } from './task-view.js';
 import type { SessionKind } from '@orbit/contracts';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -16,17 +17,23 @@ if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
 
 const prisma = new PrismaClient();
 
-// ── Shadow mode (P2 schema-canary) ────────────────────────────────────────────
-// Set SHADOW_MODE=true + API_BASE_URL + API_BOT_TOKEN to enable.
-// When disabled, zero HTTP calls are made; existing bot behaviour is unchanged.
+// ── Shadow mode (P2 schema-canary) + READ_FROM_API (P3) ──────────────────────
+// SHADOW_MODE=true: fire-and-forget API canary calls alongside Prisma reads.
+// READ_FROM_API=true: use API as primary source for task reads (Prisma fallback on error).
+// Both require API_BASE_URL + API_BOT_TOKEN to be set.
 const SHADOW_MODE = process.env.SHADOW_MODE === 'true';
+const READ_FROM_API = process.env.READ_FROM_API === 'true';
 const API_BASE_URL = process.env.API_BASE_URL ?? '';
 const API_BOT_TOKEN = process.env.API_BOT_TOKEN ?? '';
 
 const _shadowApiClient =
-  SHADOW_MODE && API_BASE_URL && API_BOT_TOKEN
+  (SHADOW_MODE || READ_FROM_API) && API_BASE_URL && API_BOT_TOKEN
     ? createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN })
     : null;
+
+if (READ_FROM_API && !_shadowApiClient) {
+  console.error('[read-from-api] READ_FROM_API=true but API_BASE_URL/API_BOT_TOKEN not set — falling back to Prisma for all reads');
+}
 
 const shadow: ShadowConfig = {
   enabled: SHADOW_MODE && _shadowApiClient !== null,
@@ -64,7 +71,18 @@ function fmtDueSuffix(t: { dueAt: Date | null; dueHasTime: boolean }, now: Date 
   return ` · ${overdue ? '⚠️' : '⏰'} <i>${text}</i>`;
 }
 
-async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
+async function getTasksForMode(mode: ListMode, viewer: User, page: number): Promise<{ tasks: TaskView[]; total: number }> {
+  // READ_FROM_API path — only for 'my' mode (API supports my|due-soon; 'done' stays on Prisma for P3).
+  if (READ_FROM_API && _shadowApiClient && mode === 'my') {
+    try {
+      const res = await _shadowApiClient.asViewer(String(viewer.telegramUserId)).listTasks({ mode: 'my', page });
+      return { tasks: res.items.map(fromApiTask), total: res.total };
+    } catch (e) {
+      console.warn('[read-from-api] listTasks error, using Prisma', { err: String(e) });
+    }
+  }
+
+  // Prisma path — always for 'done', and for 'my' when READ_FROM_API is off or API errored.
   if (mode === 'done') {
     const where = { status: 'done' as const, assignedToId: viewer.id };
     const [tasks, total] = await Promise.all([
@@ -73,7 +91,7 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
         orderBy: [
           // UX: newest completed first
           { doneAt: 'desc' as const },
-          // Fallback for tasks without doneAt (should be rare)
+          // Secondary sort for tasks without doneAt (should be rare)
           { createdAt: 'desc' as const },
         ],
         skip: page * PAGE_SIZE,
@@ -81,10 +99,10 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
       }),
       prisma.task.count({ where }),
     ]);
-    return { tasks, total };
+    return { tasks: tasks.map(fromPrismaTask), total };
   }
 
-  // mode === 'my':
+  // mode === 'my' Prisma path:
   //   1) "due-soon" zone (dueAt within DUE_SOON_DAYS calendar days, including overdue)
   //      sorted by dueAt ASC — what's burning surfaces first.
   //   2) Everything else (no dueAt, or dueAt past the horizon) by createdAt DESC.
@@ -105,7 +123,7 @@ async function getTasksForMode(mode: ListMode, viewer: User, page: number) {
     `,
     prisma.task.count({ where }),
   ]);
-  return { tasks, total };
+  return { tasks: tasks.map(fromPrismaTask), total };
 }
 
 
@@ -114,8 +132,9 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
   let { tasks, total } = await getTasksForMode(mode, viewer, page);
 
   // Shadow call — schema-canary only, fire-and-forget (P2).
+  // Skip when READ_FROM_API is active (API already called in getTasksForMode — avoid double call).
   // API only supports mode=my|due-soon; skip shadow for 'done' list.
-  if (mode === 'my') {
+  if (mode === 'my' && !READ_FROM_API) {
     void shadowCompare(shadow, `listTasks:my:p${page}`, () =>
       shadow.apiClient!.asViewer(String(viewer.telegramUserId)).listTasks({ mode: 'my', page }),
     );
@@ -192,16 +211,41 @@ function kbTaskDetail(taskNumId: number, status: TaskStatus, mode: ListMode, pag
 }
 
 async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, page: number, editMessageId: number) {
-  await upsertUserFromCtx(ctx);
-  const task = await prisma.task.findUnique({
-    where: { numId: taskNumId },
-    include: { assignedTo: true, createdBy: true },
-  });
+  const viewer = await upsertUserFromCtx(ctx);
 
-  // Shadow call — schema-canary, fire-and-forget (P2).
-  void shadowCompare(shadow, `getTask:${taskNumId}`, () =>
-    shadow.apiClient!.asViewer(String(ctx.from!.id)).getTask(taskNumId),
-  );
+  let task: TaskView | null = null;
+  // Tracks whether API responded (success or 404). If true, skip Prisma — API is source of truth.
+  let usedApiPath = false;
+
+  if (READ_FROM_API && _shadowApiClient) {
+    try {
+      const dto = await _shadowApiClient
+        .asViewer(String(viewer.telegramUserId))
+        .getTask(taskNumId);
+      usedApiPath = true;
+      if (dto !== null) task = fromApiTask(dto);
+      // dto === null → API 404: task doesn't exist or belongs to another user.
+      // API is source of truth in READ_FROM_API mode — no Prisma lookup.
+    } catch (e) {
+      // Network or 5xx error — api-client does not throw on 404.
+      console.warn('[read-from-api] getTask error, using Prisma', { err: String(e) });
+    }
+  } else {
+    // Shadow call — schema-canary, fire-and-forget (P2).
+    // Skipped when READ_FROM_API is active (API already called above).
+    void shadowCompare(shadow, `getTask:${taskNumId}`, () =>
+      shadow.apiClient!.asViewer(String(ctx.from!.id)).getTask(taskNumId),
+    );
+  }
+
+  if (task === null && !usedApiPath) {
+    // Prisma path: READ_FROM_API off, or API threw a network/5xx error.
+    const prismaTask = await prisma.task.findUnique({
+      where: { numId: taskNumId },
+      include: { assignedTo: true, createdBy: true },
+    });
+    if (prismaTask) task = fromPrismaTask(prismaTask);
+  }
 
   if (!task) {
     // Don't rely on callback popups (we may have already answered the callback).

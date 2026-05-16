@@ -133,6 +133,7 @@ curl -H "Authorization: Bearer <API_BOT_TOKEN>" \
 | `API_BASE_URL` | ✅ required | — | `http://api.railway.internal:8080` |
 | `API_BOT_TOKEN` | ✅ required | ✅ required | Shared Bearer; Railway shared variable |
 | `SHADOW_MODE` | optional | — | `true` to enable P2 schema-canary; default `false` |
+| `READ_FROM_API` | optional | — | `true` to route task READs through api (P3); default `false` |
 | `DATABASE_URL` | P0–P4 only | ✅ required | Postgres plugin on api; remove from bot after P5 |
 | `PORT` | ✅ injected | ✅ injected | Railway sets this automatically |
 | `NODE_ENV` | `production` | `production` | |
@@ -200,6 +201,29 @@ After the `api` service is deployed and healthy:
 5. If green for 24 h — ready for P3 (`READ_FROM_API=true`).
 
 **Rollback**: set `SHADOW_MODE=false` and redeploy — zero database impact.
+
+---
+
+## P3 Rollout (READ via API)
+
+Prereq: P2 shadow stable ≥ 24h with divergence < 0.5%.
+
+1. In Railway bot service variables, ADD:
+   - `READ_FROM_API=true`
+
+   > Keep `SHADOW_MODE=false` — enabling both would double API calls for the same reads.
+   > Turn `SHADOW_MODE` off before enabling `READ_FROM_API`.
+
+2. Redeploy the bot service.
+3. Monitor for **48h**:
+   - Bot logs: `[read-from-api]` warnings indicate API failures → bot falls back to Prisma
+     (user-visible result is OK, but each warning is an observability red flag).
+   - Target: API success rate > 99.5%, p95 latency < 200ms (Railway internal network).
+4. If green for 48h → ready for P4 (WRITE_VIA_API + Railway recreate strategy + cutover).
+5. Rollback: set `READ_FROM_API=false` and redeploy. Bot returns to Prisma direct reads.
+
+> **Note**: `mode=done` task list always uses Prisma until P4 — the API currently exposes only
+> `mode=my|due-soon`.
 
 ---
 
