@@ -35,6 +35,10 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV CI=true
+
+# pnpm is needed at startup to run `prisma migrate deploy` before the server.
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
@@ -57,6 +61,6 @@ COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 EXPOSE 8080
 
-# `prisma migrate deploy` is intentionally NOT here.
-# Railway runs it as a releaseCommand before each deploy (see docs/railway-deploy.md).
+# Run migrations before the server. Prisma's advisory lock makes parallel
+# container starts safe.
 CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && node --env-file-if-exists=.env apps/api/dist/server.js"]
