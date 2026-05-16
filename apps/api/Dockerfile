@@ -63,4 +63,4 @@ EXPOSE 8080
 
 # Run migrations before the server. Prisma's advisory lock makes parallel
 # container starts safe.
-CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && node --env-file-if-exists=.env apps/api/dist/server.js"]
+CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && pnpm --filter @orbit/api exec prisma db seed && node --env-file-if-exists=.env apps/api/dist/server.js"]

@@ -197,6 +197,64 @@ describe("auth — resolveCredential", () => {
     const sha = createHash("sha256").update("x").digest("hex");
     expect(sha).toHaveLength(64);
   });
+
+  // AC-P2-19: lastUsedAt is updated on successful auth within 5s.
+  it("updates lastUsedAt on successful authenticated request (AC-P2-19)", async () => {
+    const { plaintext, row } = await createTestPat(db.prisma, {
+      canImpersonate: false,
+    });
+
+    const res = await request(app)
+      .get("/v1/users/me")
+      .set("Authorization", `Bearer ${plaintext}`);
+    expect(res.status).toBe(200);
+
+    // lastUsedAt update is fire-and-forget; poll briefly to let it land.
+    let lastUsedAt: Date | null = null;
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const pat = await db.prisma.personalAccessToken.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      if (pat.lastUsedAt !== null) {
+        lastUsedAt = pat.lastUsedAt;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    expect(lastUsedAt).not.toBeNull();
+    expect(Date.now() - lastUsedAt!.getTime()).toBeLessThan(5_000);
+  });
+
+  // AC-P2-23: revoked PAT mid-session is rejected immediately.
+  it("rejects a revoked PAT mid-session with 401 opaque body (AC-P2-23)", async () => {
+    const { plaintext, row } = await createTestPat(db.prisma, {
+      canImpersonate: false,
+    });
+
+    // First request succeeds.
+    const first = await request(app)
+      .get("/v1/users/me")
+      .set("Authorization", `Bearer ${plaintext}`);
+    expect(first.status).toBe(200);
+
+    // Revoke the PAT.
+    await db.prisma.personalAccessToken.update({
+      where: { id: row.id },
+      data: { revokedAt: new Date() },
+    });
+
+    // Subsequent request with the same plaintext is rejected.
+    const second = await request(app)
+      .get("/v1/users/me")
+      .set("Authorization", `Bearer ${plaintext}`);
+    expect(second.status).toBe(401);
+    // Body must be opaque — no information leak.
+    expect(second.body).toMatchObject({
+      error: { code: "unauthorized" },
+    });
+  });
 });
 
 describe("auth — CIDR enforcement for canImpersonate=true (AC-P2-25)", () => {

@@ -5,7 +5,7 @@ import type { ApiViewerClient } from '@orbit/api-client';
 import { getClient } from '../client.js';
 import { ConfigError } from '../config.js';
 import { EXIT_OK, exitFromError } from '../exit-codes.js';
-import { CLI_VERSION } from '../version.js';
+import { CONTRACTS_VERSION } from '../version.js';
 
 export type WhoamiDeps = {
   client?: ApiViewerClient;
@@ -46,12 +46,11 @@ export async function executeWhoami(
   let warnLine: string | null = null;
   try {
     const v = await client.getVersion();
-    const local = majorOf(CLI_VERSION);
-    const remote = majorOf(v.contractsVersion);
-    if (local !== null && remote !== null && local !== remote) {
+    const cliContractsMajor = majorOf(CONTRACTS_VERSION);
+    const serverContractsMajor = majorOf(v.contractsVersion);
+    if (cliContractsMajor !== null && serverContractsMajor !== null && cliContractsMajor !== serverContractsMajor) {
       warnLine =
-        `⚠️ CLI is contractsVersion ${CLI_VERSION}, server reports ${v.contractsVersion}; ` +
-        `you may need to update.`;
+        `⚠️ CLI was built against @orbit/contracts ${CONTRACTS_VERSION}, server reports ${v.contractsVersion}. Consider updating the CLI.`;
     }
   } catch {
     // ignore version-probe failures

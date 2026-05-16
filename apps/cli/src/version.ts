@@ -7,14 +7,7 @@ import path from 'node:path';
 // inconsistently across versions for json imports. The package.json is
 // always next to dist/, so this resolves both during dev (tsx) and prod
 // (node dist/index.js).
-function readPackageVersion(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  // dev: src/version.ts → ../package.json
-  // built: dist/version.js → ../package.json
-  const candidates = [
-    path.join(here, '..', 'package.json'),
-    path.join(here, '..', '..', 'package.json'),
-  ];
+function readPackageVersion(candidates: string[]): string {
   for (const c of candidates) {
     try {
       const json = JSON.parse(readFileSync(c, 'utf8')) as { version?: string };
@@ -28,4 +21,18 @@ function readPackageVersion(): string {
   return '0.0.0';
 }
 
-export const CLI_VERSION = readPackageVersion();
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+export const CLI_VERSION = readPackageVersion([
+  // dev: src/version.ts → ../package.json
+  // built: dist/version.js → ../package.json
+  path.join(here, '..', 'package.json'),
+  path.join(here, '..', '..', 'package.json'),
+]);
+
+// The @orbit/contracts version this CLI was built against. Used to detect
+// server contract drift in `orbit whoami`. Both dev (src/) and built (dist/)
+// are one directory below apps/cli/, so three levels up always reaches root/.
+export const CONTRACTS_VERSION = readPackageVersion([
+  path.join(here, '..', '..', '..', 'packages', 'contracts', 'package.json'),
+]);

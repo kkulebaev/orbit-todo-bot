@@ -13,9 +13,21 @@ function logs() {
 }
 
 describe('show', () => {
-  // AC-P1-5: 404 → exit 3.
-  it('returns NOT_FOUND (3) when the api-client returns null', async () => {
+  // AC-P1-5: missing task → exit 3.
+  it('returns NOT_FOUND (3) when the api-client returns null (task missing)', async () => {
     const api = makeFakeApi();
+    api.getTask.mockResolvedValueOnce(null);
+    const l = logs();
+    const code = await executeShow('99', {}, { client: api, log: l.log, err: l.err });
+    expect(code).toBe(EXIT_NOT_FOUND);
+    expect(l.errLines.join('\n')).toMatch(/not found/);
+  });
+
+  // AC-P1-5 (cross-owner): api-client maps cross-owner 404 to null (privacy
+  // convention — server returns 404 for both missing and unauthorized tasks).
+  it('returns NOT_FOUND (3) when the api-client returns null (cross-owner / privacy 404)', async () => {
+    const api = makeFakeApi();
+    // Simulate a task owned by another user: server returns 404, client maps to null.
     api.getTask.mockResolvedValueOnce(null);
     const l = logs();
     const code = await executeShow('99', {}, { client: api, log: l.log, err: l.err });

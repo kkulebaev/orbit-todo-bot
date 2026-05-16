@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { UserDtoSchema } from '@orbit/contracts';
 
@@ -6,6 +6,13 @@ import { executeWhoami } from './whoami.js';
 import { makeFakeApi } from '../test-helpers/fake-api.js';
 import { EXIT_AUTH, EXIT_OK } from '../exit-codes.js';
 import { ApiClientError } from '@orbit/api-client';
+
+// Mock the version module so tests can control CONTRACTS_VERSION independently
+// of whatever the actual packages/contracts/package.json says.
+vi.mock('../version.js', () => ({
+  CLI_VERSION: '0.1.0',
+  CONTRACTS_VERSION: '0.1.0',
+}));
 
 function logs() {
   const out: string[] = [];
@@ -47,6 +54,8 @@ describe('whoami', () => {
   });
 
   // AC-P2-29: warn on major contractsVersion mismatch.
+  // The CLI's built-time CONTRACTS_VERSION is mocked to '0.1.0'; server reports
+  // '99.0.0' (different major) → warning fires.
   it('warns when the server reports a different major contractsVersion', async () => {
     const api = makeFakeApi();
     api.getVersion.mockResolvedValueOnce({
@@ -57,14 +66,17 @@ describe('whoami', () => {
     const l = logs();
     const code = await executeWhoami({}, { client: api, log: l.log, err: l.err });
     expect(code).toBe(EXIT_OK);
-    expect(l.out.join('\n')).toMatch(/contractsVersion/);
+    // Warning mentions both the CLI built-against version and the server version.
+    expect(l.out.join('\n')).toMatch(/@orbit\/contracts/);
+    expect(l.out.join('\n')).toMatch(/99\.0\.0/);
   });
 
+  // AC-P2-29: no warning when major versions match.
   it('does not warn when major versions match', async () => {
     const api = makeFakeApi();
-    // Default fake reports 0.1.0 which matches the CLI's local 0.1.0.
+    // Default fake reports 0.1.0 which matches the mocked CONTRACTS_VERSION 0.1.0.
     const l = logs();
     await executeWhoami({}, { client: api, log: l.log, err: l.err });
-    expect(l.out.join('\n')).not.toMatch(/contractsVersion/);
+    expect(l.out.join('\n')).not.toMatch(/@orbit\/contracts/);
   });
 });
