@@ -32,6 +32,7 @@ describe("sessions routes", () => {
     app = createApp({
       prisma: db.prisma,
       allowedCidrs: ["fd00::/8", "::1", "127.0.0.1/32"],
+      publicExposure: true,
     });
   }, 120_000);
 

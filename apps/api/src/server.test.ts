@@ -35,13 +35,14 @@ describe("GET /healthz", () => {
   });
 });
 
+
 describe("auth — resolveCredential", () => {
   let db: TestDb;
   let app: ReturnType<typeof createApp>;
 
   beforeAll(async () => {
     db = await startTestDb();
-    app = createApp({ prisma: db.prisma, allowedCidrs: DEFAULT_CIDRS });
+    app = createApp({ prisma: db.prisma, allowedCidrs: DEFAULT_CIDRS, publicExposure: true });
   }, 120_000);
 
   afterAll(async () => {
@@ -209,6 +210,7 @@ describe("auth — CIDR enforcement for canImpersonate=true (AC-P2-25)", () => {
     app = createApp({
       prisma: db.prisma,
       allowedCidrs: ["10.0.0.0/8"],
+      publicExposure: true,
     });
   }, 120_000);
 
