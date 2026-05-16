@@ -67,6 +67,27 @@ describe('handleCliLink', () => {
     expect(replyText).toContain(MINT_RESPONSE.token);
   });
 
+  it('reply does not advertise the --base-url flag (default is built into the CLI)', async () => {
+    const ctx = makeCtx('/cli_link');
+    const api = makeApi();
+
+    await handleCliLink(ctx, api);
+
+    const replyText: string = ctx.reply.mock.calls[0][0] as string;
+    expect(replyText).not.toContain('--base-url');
+    expect(replyText).toContain('orbit login --token');
+  });
+
+  it('reply inlines the minted token into the orbit login command for one-tap copy', async () => {
+    const ctx = makeCtx('/cli_link');
+    const api = makeApi();
+
+    await handleCliLink(ctx, api);
+
+    const replyText: string = ctx.reply.mock.calls[0][0] as string;
+    expect(replyText).toContain(`orbit login --token ${MINT_RESPONSE.token}`);
+  });
+
   it('passes an optional label from the command text to mintCliToken', async () => {
     const ctx = makeCtx('/cli_link my laptop');
     const api = makeApi();

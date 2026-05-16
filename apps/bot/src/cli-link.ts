@@ -34,7 +34,7 @@ export async function handleCliLink(ctx: Context, api: ApiClient): Promise<void>
       `🔑 Ваш CLI-токен (показывается один раз, скопируйте сейчас):\n\n` +
         `\`${minted.token}\`\n\n` +
         `Установите CLI и выполните:\n\n` +
-        `\`orbit login --token <token> --base-url https://orbit-todo-api.up.railway.app\`\n\n` +
+        `\`orbit login --token ${minted.token}\`\n\n` +
         `Отозвать токен: \`orbit tokens revoke ${minted.id}\` или /cli\\_revoke (TBD).`,
       { parse_mode: 'Markdown' },
     );
