@@ -45,9 +45,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 
 # Built contracts package — apps/api/node_modules/@orbit/contracts is a pnpm
-# workspace symlink that points back at packages/contracts/, so its dist/ must
-# be present in the runtime stage too.
+# workspace symlink that points back at packages/contracts/, so its dist/ and
+# node_modules/ (which provides transitive deps like zod) must be present in
+# the runtime stage too.
 COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=builder /app/packages/contracts/node_modules ./packages/contracts/node_modules
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 # Prisma schema is needed at runtime for migrate (run via Railway releaseCommand).
