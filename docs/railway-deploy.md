@@ -132,6 +132,7 @@ curl -H "Authorization: Bearer <API_BOT_TOKEN>" \
 | `WEBHOOK_SECRET` | ✅ required | — | Telegram webhook validation |
 | `API_BASE_URL` | ✅ required | — | `http://api.railway.internal:8080` |
 | `API_BOT_TOKEN` | ✅ required | ✅ required | Shared Bearer; Railway shared variable |
+| `SHADOW_MODE` | optional | — | `true` to enable P2 schema-canary; default `false` |
 | `DATABASE_URL` | P0–P4 only | ✅ required | Postgres plugin on api; remove from bot after P5 |
 | `PORT` | ✅ injected | ✅ injected | Railway sets this automatically |
 | `NODE_ENV` | `production` | `production` | |
@@ -171,6 +172,34 @@ Railway dashboard → `bot` service → **Deployments** → **Redeploy** previou
 
 Feature-flag rollback (P2–P4): set `READ_FROM_API=false` or `WRITE_VIA_API=false`
 and redeploy — no migration needed.
+
+---
+
+## P2 Rollout (shadow mode)
+
+Shadow mode is a **schema-canary**: the bot makes a parallel HTTP call to the
+API for each READ flow and validates the response with Zod. The user always
+receives the Prisma result — the API call is fire-and-forget.
+
+After the `api` service is deployed and healthy:
+
+1. Add to the `bot` service environment variables:
+   - `API_BASE_URL=http://<api-internal-hostname>.railway.internal:8080`
+     (copy the private-network hostname from the `api` service Settings page)
+   - `API_BOT_TOKEN=<same value as the api service>` (Railway shared variable)
+   - `SHADOW_MODE=true`
+2. Redeploy the `bot` service.
+3. Observe Railway bot logs for **24 hours**. Expect entries like:
+   ```
+   shadow call { shadow: 'listTasks:my:p0', status: 'ok', ms: 12 }
+   ```
+   Warnings (`shadow call diverged`) indicate a schema mismatch between
+   `@orbit/api` and `@orbit/contracts`. Target: **< 0.5% divergence rate**.
+4. If the divergence rate is high — inspect the warning log's `issues` field to
+   find the contract drift. **Do NOT proceed to P3** until resolved.
+5. If green for 24 h — ready for P3 (`READ_FROM_API=true`).
+
+**Rollback**: set `SHADOW_MODE=false` and redeploy — zero database impact.
 
 ---
 

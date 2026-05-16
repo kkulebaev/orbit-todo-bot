@@ -7,9 +7,10 @@ dist/
 # env / secrets
 .env
 .env.*
+!.env.example
 
-# prisma
-prisma/migrations/
+# Claude Code runtime
+.claude/
 
 # logs
 *.log

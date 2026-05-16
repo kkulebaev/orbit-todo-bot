@@ -25,7 +25,7 @@ Root-level workspace commands:
 - `pnpm -r typecheck` — type-check all packages.
 - `pnpm -r test` — run Vitest in all packages once.
 - `pnpm -r build` — build all packages.
-- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`).
+- `pnpm --filter @orbit/bot dev` — run the bot in dev mode via `tsx src/bot.ts` (loads `.env`). Set `SHADOW_MODE=true` + `API_BASE_URL` + `API_BOT_TOKEN` to enable P2 schema-canary parallel reads (see `docs/railway-deploy.md`).
 - `pnpm --filter @orbit/bot lint` — ESLint on bot source (warns on `@prisma/client` imports; becomes error on P5).
 - `pnpm --filter @orbit/api dev` — run the api in dev mode.
 - `pnpm prisma:generate` / `pnpm prisma:migrate` — Prisma client generation and `migrate deploy` (delegated to `@orbit/api`).

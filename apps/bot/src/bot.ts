@@ -7,11 +7,32 @@ import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
 import { formatDueSmart, formatSmart } from './date-format.js';
 import { computeDueSoonCutoff, parseDueDateInput } from './bot-logic.js';
+import { createApiClient } from './api-client.js';
+import { shadowCompare, type ShadowConfig } from './shadow.js';
+import type { SessionKind } from '@orbit/contracts';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('Missing DATABASE_URL in env');
 
 const prisma = new PrismaClient();
+
+// ── Shadow mode (P2 schema-canary) ────────────────────────────────────────────
+// Set SHADOW_MODE=true + API_BASE_URL + API_BOT_TOKEN to enable.
+// When disabled, zero HTTP calls are made; existing bot behaviour is unchanged.
+const SHADOW_MODE = process.env.SHADOW_MODE === 'true';
+const API_BASE_URL = process.env.API_BASE_URL ?? '';
+const API_BOT_TOKEN = process.env.API_BOT_TOKEN ?? '';
+
+const _shadowApiClient =
+  SHADOW_MODE && API_BASE_URL && API_BOT_TOKEN
+    ? createApiClient({ baseUrl: API_BASE_URL, token: API_BOT_TOKEN })
+    : null;
+
+const shadow: ShadowConfig = {
+  enabled: SHADOW_MODE && _shadowApiClient !== null,
+  apiClient: _shadowApiClient,
+  logger: console,
+};
 
 function mustBePrivateChat(ctx: Context) {
   return ctx.chat?.type === 'private';
@@ -92,6 +113,14 @@ async function showList(ctx: Context, mode: ListMode, page: number, editMessageI
   const viewer = await upsertUserFromCtx(ctx);
   let { tasks, total } = await getTasksForMode(mode, viewer, page);
 
+  // Shadow call — schema-canary only, fire-and-forget (P2).
+  // API only supports mode=my|due-soon; skip shadow for 'done' list.
+  if (mode === 'my') {
+    void shadowCompare(shadow, `listTasks:my:p${page}`, () =>
+      shadow.apiClient!.asViewer(String(viewer.telegramUserId)).listTasks({ mode: 'my', page }),
+    );
+  }
+
   // If the requested page is past the last non-empty page (e.g., the last task on it
   // was just completed/deleted), clamp back to the last page that still has data.
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
@@ -168,6 +197,11 @@ async function showTaskDetail(ctx: Context, taskNumId: number, mode: ListMode, p
     where: { numId: taskNumId },
     include: { assignedTo: true, createdBy: true },
   });
+
+  // Shadow call — schema-canary, fire-and-forget (P2).
+  void shadowCompare(shadow, `getTask:${taskNumId}`, () =>
+    shadow.apiClient!.asViewer(String(ctx.from!.id)).getTask(taskNumId),
+  );
 
   if (!task) {
     // Don't rely on callback popups (we may have already answered the callback).
@@ -290,6 +324,17 @@ bot.on('message:text', async (ctx, next) => {
     where: { userId: me.id },
     orderBy: { createdAt: 'desc' },
   });
+
+  // Shadow call — schema-canary, fire-and-forget (P2).
+  // Only shadow when a pending action exists so we have a concrete kind for the API.
+  // PendingActionKind values match SessionKind values 1:1 (same enum strings).
+  if (pending) {
+    void shadowCompare(shadow, `getLatestSession:${pending.kind}`, () =>
+      shadow.apiClient!.asViewer(String(me.telegramUserId)).getLatestSession(
+        pending.kind as unknown as SessionKind,
+      ),
+    );
+  }
 
   if (!pending) {
     // UX: allow adding a task by simply sending a text message (without pressing ➕)
