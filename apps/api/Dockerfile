@@ -2,8 +2,9 @@
 
 FROM node:24-alpine AS builder
 WORKDIR /app
+ENV CI=true
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # 1. Fetch all packages from lockfile into the virtual store.
 #    This layer is cached until pnpm-lock.yaml changes.

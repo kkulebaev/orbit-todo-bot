@@ -2,8 +2,9 @@
 
 FROM node:24-alpine AS builder
 WORKDIR /app
+ENV CI=true
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # 1. Fetch all packages from lockfile into the virtual store.
 #    This layer is cached until pnpm-lock.yaml changes.
@@ -22,11 +23,6 @@ COPY apps/bot/tsconfig.json ./apps/bot/tsconfig.json
 COPY apps/bot/src ./apps/bot/src
 COPY packages/contracts/src ./packages/contracts/src
 COPY packages/contracts/tsconfig.json ./packages/contracts/tsconfig.json
-
-# Generate Prisma client (bot still uses Prisma directly on P0–P4).
-# `prisma` CLI is pulled in as a peer dep of @prisma/client via autoInstallPeers.
-COPY apps/api/prisma ./apps/api/prisma
-RUN pnpm --filter @orbit/bot exec prisma generate --schema=../api/prisma/schema.prisma
 
 RUN pnpm --filter @orbit/bot run build
 
