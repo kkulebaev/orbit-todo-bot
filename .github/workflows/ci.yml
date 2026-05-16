@@ -30,8 +30,11 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: pnpm --filter @orbit/api exec prisma generate
+
       - name: Run tests
-        run: pnpm test
+        run: pnpm -r test
 
   typecheck:
     runs-on: ubuntu-latest
@@ -52,6 +55,9 @@ jobs:
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @orbit/api exec prisma generate
 
       - name: Typecheck
         run: pnpm -r typecheck
