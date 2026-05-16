@@ -2,13 +2,18 @@
  * Thin HTTP client for @orbit/api.
  *
  * Design:
- *   const client = createApiClient({ baseUrl, credential: { kind: 'service', token } });
+ *   const client = createApiClient({ baseUrl, credential: { kind: 'pat', token } });
  *   const api    = client.asViewer(String(from.id));
  *   const tasks  = await api.listTasks({ mode: 'my', page: 0 });
  *
  * `asViewer(telegramUserId)` returns a viewer-scoped client that injects
- * `X-Telegram-User-Id` on every request (service mode only). Cheap to call
- * per Telegram update — the base config (baseUrl, credential, fetchImpl) is shared.
+ * `X-Telegram-User-Id` on every request. The header is sent unconditionally —
+ * the *server* decides whether to honor or ignore it based on the PAT's
+ * `canImpersonate` bit:
+ *   - canImpersonate=true  (bot PAT): viewer = upserted user from header.
+ *   - canImpersonate=false (user PAT): header is ignored; viewer = PAT owner.
+ * Cheap to call per Telegram update — the base config (baseUrl, credential,
+ * fetchImpl) is shared.
  *
  * Error policy:
  *   - 404 on GET            → null (not an error)
@@ -64,14 +69,11 @@ export class ApiNetworkError extends Error {
 // ── Credential discriminated union ────────────────────────────────────────────
 
 /**
- * `kind: 'pat'`     — Personal Access Token; user-scoped, no X-Telegram-User-Id.
- * `kind: 'service'` — Temporary bot service token retained for P1 only.
- *                     P2 deletes this variant once the bot migrates to its own
- *                     PAT with canImpersonate=true. Do NOT use in new code.
+ * `kind: 'pat'` — Personal Access Token. The only credential variant on the
+ * P2+ public API surface. The server decides whether the PAT may impersonate
+ * a Telegram user (bot PAT) or is bound to a single user (user PAT).
  */
-export type Credential =
-  | { kind: 'pat'; token: string }
-  | { kind: 'service'; token: string };
+export type Credential = { kind: 'pat'; token: string };
 
 // ── Config & types ────────────────────────────────────────────────────────────
 
@@ -168,15 +170,12 @@ async function doFetch(
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${credential.token}`,
+    // Always send X-Telegram-User-Id when a viewer is set; the server decides
+    // whether to honor (bot PAT, canImpersonate=true) or ignore (user PAT,
+    // canImpersonate=false). Per Architect P2 model: caller decides nothing,
+    // server enforces.
+    'X-Telegram-User-Id': telegramUserId,
   };
-
-  // Only service-mode credentials send X-Telegram-User-Id.
-  // PAT mode does not — the server resolves the viewer from the PAT itself.
-  // P2 will introduce bot-PAT mode with canImpersonate=true that re-enables
-  // this header for callers with that bit set; out of scope for P0.
-  if (credential.kind === 'service') {
-    headers['X-Telegram-User-Id'] = telegramUserId;
-  }
 
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -272,6 +271,10 @@ export function createApiClient(cfg: ApiClientConfig) {
   return {
     /**
      * Returns a viewer-scoped client. Cheap to create per Telegram update.
+     *
+     * `telegramUserId` is forwarded as `X-Telegram-User-Id` on every request.
+     * The server honors it only when the PAT has `canImpersonate=true` (bot
+     * PAT); user PATs ignore it and resolve the viewer from the PAT itself.
      *
      * @param telegramUserId  stringified BigInt from ctx.from.id
      */

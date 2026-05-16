@@ -2,9 +2,10 @@ import express from "express";
 import type { Express, NextFunction, Request, Response } from "express";
 import { pinoHttp } from "pino-http";
 import { pino } from "pino";
+import type { Logger } from "pino";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
-import { requireBearer, resolveViewer } from "./auth.js";
+import { parseCidrsFromEnv, resolveCredential } from "./auth.js";
 import { idempotencyGuard } from "./idempotency.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { usersRoutes } from "./routes/users.js";
@@ -13,19 +14,22 @@ import { sessionsRoutes } from "./routes/sessions.js";
 import { startSessionCleanup } from "./cron/cleanup-sessions.js";
 
 export interface CreateAppOptions {
-  apiToken: string;
   prisma: PrismaClient;
+  /** CIDRs allowed for `canImpersonate=true` PATs (e.g. bot-PAT). */
+  allowedCidrs?: string[];
+  /** Logger injected into `resolveCredential` for impersonation audit lines. */
+  logger?: Pick<Logger, "info" | "warn">;
 }
 
 /**
  * Build the Express app.
  *
  * Exported separately from the listen() call so tests can mount it with a
- * fake Prisma client and supertest. The shape mirrors `apps/bot/src/server.ts`
- * where `createApp(bot)` is reused by integration tests.
+ * fake Prisma client and supertest. Mirrors `apps/bot/src/server.ts` where
+ * `createApp(bot)` is reused by integration tests.
  */
 export function createApp(opts: CreateAppOptions): Express {
-  const { apiToken, prisma } = opts;
+  const { prisma, allowedCidrs = [], logger } = opts;
   const app = express();
 
   app.use(
@@ -47,11 +51,12 @@ export function createApp(opts: CreateAppOptions): Express {
     res.status(200).json({ ok: true, service: "api" });
   });
 
-  // Authenticated v1 router. Order matters: Bearer first (reject unknown
-  // callers cheap), then viewer upsert, then idempotency replay.
+  // Authenticated v1 router. Order matters: PAT credential resolution first
+  // (reject unknown callers cheap), then idempotency replay. `resolveCredential`
+  // sets both `req.viewer` and `req.auth`, replacing the old
+  // `requireBearer` + `resolveViewer` pair.
   const v1 = express.Router();
-  v1.use(requireBearer(apiToken));
-  v1.use(resolveViewer(prisma));
+  v1.use(resolveCredential(prisma, { allowedCidrs, logger }));
   v1.use(idempotencyGuard);
 
   v1.use("/users", usersRoutes());
@@ -87,10 +92,13 @@ const isEntrypoint =
   import.meta.url === `file://${process.argv[1]}`;
 
 if (isEntrypoint) {
-  const apiToken = process.env.API_BOT_TOKEN;
-  if (!apiToken) throw new Error("Missing API_BOT_TOKEN");
   const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
-  const app = createApp({ apiToken, prisma: defaultPrisma });
+  // Default CIDRs match Railway internal IPv6 (`fd00::/8`) + IPv6 loopback
+  // (`::1`) + IPv4 loopback (`127.0.0.1`) for local-dev / health-check probes.
+  const allowedCidrs = parseCidrsFromEnv(
+    process.env.BOT_PAT_ALLOWED_CIDR ?? "fd00::/8,::1,127.0.0.1/32",
+  );
+  const app = createApp({ prisma: defaultPrisma, allowedCidrs, logger });
   const stopCleanup = startSessionCleanup({
     prisma: defaultPrisma,
     logger,

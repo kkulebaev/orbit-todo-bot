@@ -22,10 +22,26 @@ model User {
   firstName      String?
   createdAt      DateTime @default(now())
 
-  createdTasks   Task[]          @relation("TaskCreatedBy")
-  assignedTasks  Task[]          @relation("TaskAssignedTo")
+  createdTasks   Task[]                @relation("TaskCreatedBy")
+  assignedTasks  Task[]                @relation("TaskAssignedTo")
   invitesSent    Invite[]
   pendingActions PendingAction[]
+  tokens         PersonalAccessToken[]
+}
+
+model PersonalAccessToken {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique
+  label          String?
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  expiresAt      DateTime?
+  canImpersonate Boolean   @default(false)
+
+  @@index([userId, revokedAt])
 }
 
 model Invite {

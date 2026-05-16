@@ -12,12 +12,12 @@ import { fromApiUser, type ViewerView } from './viewer-view.js';
 import { createApiSessionStore, type SessionStore } from './session-store.js';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? '';
-const API_BOT_TOKEN = process.env.API_BOT_TOKEN ?? '';
-if (!API_BASE_URL || !API_BOT_TOKEN) {
-  throw new Error('Missing API_BASE_URL or API_BOT_TOKEN in env');
+const BOT_PAT = process.env.BOT_PAT ?? '';
+if (!API_BASE_URL || !BOT_PAT) {
+  throw new Error('Missing API_BASE_URL or BOT_PAT in env');
 }
 
-const apiClient = createApiClient({ baseUrl: API_BASE_URL, credential: { kind: 'service', token: API_BOT_TOKEN } });
+const apiClient = createApiClient({ baseUrl: API_BASE_URL, credential: { kind: 'pat', token: BOT_PAT } });
 const sessionStore: SessionStore = createApiSessionStore(apiClient);
 
 const UNAVAILABLE_MSG = '🛠 Сервис временно недоступен, попробуйте ещё раз чуть позже.';

@@ -4,7 +4,6 @@ import { ApiClientError, ApiNetworkError, createApiClient, redactSensitiveHeader
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const BASE_URL = 'https://api.example.com';
-const SVC_CREDENTIAL = { kind: 'service' as const, token: 'svc-token' };
 const PAT_CREDENTIAL = { kind: 'pat' as const, token: 'pat-token' };
 const TG_USER_ID = '999888777';
 const IK = 'idem-key-abc';
@@ -35,7 +34,7 @@ function mockRes(status: number, body: unknown = null): Response {
   return { status, json: async () => body } as unknown as Response;
 }
 
-function makeClient(fetchMock: ReturnType<typeof vi.fn>, credential = SVC_CREDENTIAL) {
+function makeClient(fetchMock: ReturnType<typeof vi.fn>, credential = PAT_CREDENTIAL) {
   return createApiClient({
     baseUrl: BASE_URL,
     credential,
@@ -91,10 +90,10 @@ describe('api-client', () => {
     );
   });
 
-  // 6. upsertMe → correct X-Telegram-User-Id header on GET (service mode)
-  it('upsertMe: service mode sends correct X-Telegram-User-Id header', async () => {
+  // 6. upsertMe → X-Telegram-User-Id header always sent (server decides honor/ignore).
+  it('upsertMe: PAT mode sends X-Telegram-User-Id header (server decides whether to honor)', async () => {
     fetchMock.mockResolvedValue(mockRes(200, USER_DTO));
-    await makeClient(fetchMock, SVC_CREDENTIAL).upsertMe();
+    await makeClient(fetchMock, PAT_CREDENTIAL).upsertMe();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)['X-Telegram-User-Id']).toBe(TG_USER_ID);
   });
@@ -139,12 +138,14 @@ describe('api-client', () => {
     expect(await makeClient(fetchMock).deleteTask(99, IK)).toBe(false);
   });
 
-  // 12. Credential union: PAT mode does NOT send X-Telegram-User-Id (AC-P0-7)
-  it('credential union: PAT mode does not send X-Telegram-User-Id header', async () => {
+  // 12. Authorization header carries the PAT bearer token.
+  it('PAT mode: Authorization header is Bearer <token>', async () => {
     fetchMock.mockResolvedValue(mockRes(200, USER_DTO));
     await makeClient(fetchMock, PAT_CREDENTIAL).upsertMe();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)['X-Telegram-User-Id']).toBeUndefined();
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(
+      `Bearer ${PAT_CREDENTIAL.token}`,
+    );
   });
 
   // 13. redactSensitiveHeaders unit test (AC-P0-7)
@@ -173,7 +174,7 @@ describe('api-client', () => {
     fetchMock.mockResolvedValue(mockRes(201, { numId: 'bad', title: 123 }));
     const client = createApiClient({
       baseUrl: BASE_URL,
-      credential: SVC_CREDENTIAL,
+      credential: PAT_CREDENTIAL,
       fetchImpl: fetchMock as unknown as typeof fetch,
       logger: captureLogger,
     });
@@ -182,7 +183,7 @@ describe('api-client', () => {
 
     const combined = warnMessages.join('\n');
     // Token plaintext must not appear in any logger output
-    expect(combined).not.toMatch(/svc-token/);
+    expect(combined).not.toMatch(/pat-token/);
     // Idempotency-key plaintext must not appear in any logger output
     expect(combined).not.toMatch(/idem-key-abc/);
   });

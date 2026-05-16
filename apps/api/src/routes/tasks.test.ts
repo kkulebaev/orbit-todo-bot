@@ -22,16 +22,20 @@ import {
   stopTestDb,
   type TestDb,
 } from "../test-helpers/postgres.js";
-
-const API_TOKEN = "tasks-test-token";
+import { createTestPat } from "../test-helpers/pat.js";
 
 describe("tasks routes", () => {
   let db: TestDb;
   let app: ReturnType<typeof createApp>;
+  /** Bot-PAT plaintext for impersonation-style auth (canImpersonate=true). */
+  let botPat: string;
 
   beforeAll(async () => {
     db = await startTestDb();
-    app = createApp({ apiToken: API_TOKEN, prisma: db.prisma });
+    app = createApp({
+      prisma: db.prisma,
+      allowedCidrs: ["fd00::/8", "::1", "127.0.0.1/32"],
+    });
   }, 120_000);
 
   afterAll(async () => {
@@ -42,8 +46,18 @@ describe("tasks routes", () => {
     // Delete in FK-safe order: child tables first.
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
+    await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
+
+    // Mint a fresh bot PAT per test. canImpersonate=true so the
+    // X-Telegram-User-Id header is honored (matches bot-on-behalf-of-user
+    // request shape, same semantics as the pre-P2 service-token + header).
+    const fixture = await createTestPat(db.prisma, {
+      canImpersonate: true,
+      label: "test-bot",
+    });
+    botPat = fixture.plaintext;
   });
 
   /** Build standard auth headers for a given Telegram user id. */
@@ -52,7 +66,7 @@ describe("tasks routes", () => {
     extra?: Record<string, string>,
   ): Record<string, string> {
     return {
-      Authorization: `Bearer ${API_TOKEN}`,
+      Authorization: `Bearer ${botPat}`,
       "X-Telegram-User-Id": telegramUserId,
       ...extra,
     };
