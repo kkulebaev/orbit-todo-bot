@@ -59,4 +59,4 @@ EXPOSE 8080
 
 # `prisma migrate deploy` is intentionally NOT here.
 # Railway runs it as a releaseCommand before each deploy (see docs/railway-deploy.md).
-CMD ["node", "--env-file-if-exists=.env", "apps/api/dist/server.js"]
+CMD ["sh", "-c", "pnpm --filter @orbit/api exec prisma migrate deploy && node --env-file-if-exists=.env apps/api/dist/server.js"]

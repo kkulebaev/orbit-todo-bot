@@ -96,7 +96,10 @@ if (isEntrypoint) {
     logger,
   });
   const PORT = Number(process.env.PORT ?? 8080);
-  const server = app.listen(PORT, "0.0.0.0", () => {
+  // Bind dual-stack (IPv6 + IPv4 via mapping). Railway internal networking
+  // resolves `*.railway.internal` over IPv6; an IPv4-only bind ("0.0.0.0") is
+  // unreachable from sibling services.
+  const server = app.listen(PORT, "::", () => {
     logger.info({ port: PORT }, "orbit-api listening");
   });
   const shutdown = (signal: NodeJS.Signals) => {
