@@ -202,18 +202,81 @@ curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
 
 ---
 
-## Connecting the CLI
+## CLI installation
 
-The CLI client (`@orbit/cli`) is in P3 of the rollout — see
-[the plan](.omc/plans/cli-client-orbit.md). Once it ships:
+```bash
+# 1. Build
+pnpm --filter @orbit/contracts build
+pnpm --filter @orbit/api-client build
+pnpm --filter @orbit/cli build
 
-1. In Telegram: `/cli_link [optional label]`. The bot DMs a one-time token
-   matching `orbit_pat_…`.
-2. On your laptop: `orbit login --token <pasted-token> --base-url https://orbit-todo-api.up.railway.app`.
-3. `orbit whoami` confirms the connection.
+# 2. Link globally (run from the repo root — pnpm link --global must be run inside the package dir)
+cd apps/cli && pnpm link --global && cd -
+```
 
-Tokens are per-user and revocable via `orbit tokens revoke <id>` or by
-deleting the row in the API DB.
+This exposes an `orbit` binary on your PATH via pnpm's global bin directory
+(`pnpm root -g`/`../bin` — add that to `PATH` if not already present).
+
+> `npm publish` is a future follow-up (F4). For now the dev recipe above is the
+> only install path.
+
+---
+
+## CLI commands
+
+Obtain a PAT first:
+
+1. In Telegram: `/cli_link [optional label]`. The bot DMs a token matching
+   `orbit_pat_…`.
+2. `orbit login --token <pasted-token>` — saves to config.
+3. `orbit whoami` — confirms the connection.
+
+| Command | Purpose |
+|---|---|
+| `orbit login --token <pat>` | Save a PAT minted via `/cli_link` in the bot |
+| `orbit logout` | Delete local config (does not revoke the PAT server-side) |
+| `orbit whoami [--json]` | Show authenticated user |
+| `orbit list [--mode my\|due-soon\|done] [--page N] [--json]` | List tasks |
+| `orbit show <numId> [--json]` | Show one task by numeric id |
+| `orbit add <text...> [--due "DD.MM.YYYY [HH:MM]"] [--json]` | Create a task |
+| `orbit done <numId> [--json]` | Mark a task done |
+| `orbit reopen <numId> [--json]` | Reopen a done task |
+| `orbit edit <numId> --title T \| --due D \| --no-due [--json]` | Update title or due date |
+| `orbit rm <numId> --yes` | Delete a task (requires `--yes`) |
+| `orbit tokens list [--json]` | List your PATs |
+| `orbit tokens revoke <id>` | Revoke a PAT by id |
+
+**Exit codes:** 0 ok · 1 generic · 2 auth · 3 not-found · 4 network.
+
+`--json` is supported on every command. `--idempotency-key <key>` is accepted
+on every mutation (`add`, `done`, `reopen`, `edit`, `rm`, `tokens revoke`);
+omit to auto-generate a `randomUUID()`.
+
+**Config file:** `$XDG_CONFIG_HOME/orbit/config.json` (default
+`~/.config/orbit/config.json`), written with mode `0600`. Add to `.gitignore`:
+
+```
+.config/orbit/config.json
+```
+
+**Env overrides:** `ORBIT_API_BASE_URL`, `ORBIT_TOKEN` (override config
+without touching the file — useful for scripting and CI).
+
+---
+
+## Smoke test
+
+`scripts/smoke.sh` exercises the deployed Railway API end-to-end. Requires a
+real PAT (mint one via `/cli_link` in the bot):
+
+```bash
+ORBIT_TOKEN=orbit_pat_… bash scripts/smoke.sh
+# or with a custom base URL:
+ORBIT_TOKEN=orbit_pat_… ORBIT_API_BASE_URL=https://orbit-todo-api.up.railway.app bash scripts/smoke.sh
+```
+
+This script is intentionally not wired into CI (it requires live secrets).
+Run it manually after deploy to verify the production API.
 
 ---
 

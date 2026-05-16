@@ -84,3 +84,39 @@ jobs:
 
       - name: Lint bot
         run: pnpm --filter @orbit/bot lint
+
+  cli-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contracts and api-client (workspace deps)
+        run: pnpm --filter @orbit/contracts --filter @orbit/api-client build
+
+      - name: Build CLI
+        run: pnpm --filter @orbit/cli build
+
+      - name: Verify orbit binary
+        run: |
+          node apps/cli/dist/index.js --version
+          node apps/cli/dist/index.js --help | grep -q "login"
+          node apps/cli/dist/index.js --help | grep -q "tokens"
