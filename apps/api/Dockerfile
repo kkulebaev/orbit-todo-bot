@@ -25,6 +25,7 @@ COPY apps/api/prisma ./apps/api/prisma
 COPY packages/contracts/src ./packages/contracts/src
 COPY packages/contracts/tsconfig.json ./packages/contracts/tsconfig.json
 
+RUN pnpm --filter @orbit/contracts run build
 RUN pnpm --filter @orbit/api exec prisma generate
 RUN pnpm --filter @orbit/api run build
 

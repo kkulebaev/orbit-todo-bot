@@ -24,6 +24,7 @@ COPY apps/bot/src ./apps/bot/src
 COPY packages/contracts/src ./packages/contracts/src
 COPY packages/contracts/tsconfig.json ./packages/contracts/tsconfig.json
 
+RUN pnpm --filter @orbit/contracts run build
 RUN pnpm --filter @orbit/bot run build
 
 # ---------------------------------------------------------------------------
