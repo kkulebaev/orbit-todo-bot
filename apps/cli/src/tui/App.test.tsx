@@ -256,3 +256,149 @@ describe('TUI App', () => {
     expect(api.listTasks).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TUI App — detail-view actions', () => {
+  async function openDetail(taskOverrides: Partial<ReturnType<typeof makeTask>> = {}) {
+    const api = makeFakeApi();
+    const task = makeTask({ numId: 100, title: 'pick milk', status: 'open', ...taskOverrides });
+    api.listTasks.mockResolvedValueOnce({ page: 0, total: 1, items: [task] });
+    const harness = render(
+      <App client={api} idempotencyKey={KEY} now={NOW} exitOnQuit={false} />,
+    );
+    await waitForFrame(harness.lastFrame, (f) => f.includes(task.title));
+    harness.stdin.write(ENTER);
+    await waitForFrame(harness.lastFrame, (f) => f.includes('Карточка задачи'));
+    return { api, task, ...harness };
+  }
+
+  it('detail: "d" calls updateTask({status:"done"}) on an open task', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('d');
+    await waitForFrame(lastFrame, (f) => f.includes('#100 закрыто'));
+    expect(api.updateTask).toHaveBeenCalledWith(100, { status: 'done' }, 'idem-key-1');
+  });
+
+  it('detail: "e" enters edit-title mode with the current title pre-filled', async () => {
+    const { stdin, lastFrame } = await openDetail();
+    stdin.write('e');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
+    expect(lastFrame()!).toContain('enter сохранить');
+  });
+
+  it('detail edit-title: typing appends, backspace removes, enter submits new title', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('e');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
+    stdin.write(''); // backspace (DEL)
+    await waitForFrame(lastFrame, (f) => f.includes('pick mil▎'));
+    stdin.write('k');
+    stdin.write('!');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk!▎'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('#100 переименована'));
+    expect(api.updateTask).toHaveBeenCalledWith(100, { title: 'pick milk!' }, 'idem-key-1');
+  });
+
+  it('detail edit-title: esc cancels without calling updateTask', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('e');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
+    stdin.write('Z');
+    stdin.write(ESC);
+    await waitForFrame(lastFrame, (f) => !f.includes('▎'));
+    expect(api.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('detail edit-title: enter with empty buffer shows error, no API call', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('e');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
+    // Empty the buffer (9 chars of 'pick milk')
+    for (let i = 0; i < 9; i++) stdin.write('');
+    await waitForFrame(lastFrame, (f) => /#100 ▎/.test(f));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('Название не может быть пустым'));
+    expect(api.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('detail: "t" enters edit-due with formatted current dueAt', async () => {
+    const { stdin, lastFrame } = await openDetail({
+      dueAt: '2026-05-20T15:00:00.000Z',
+      dueHasTime: true,
+    });
+    stdin.write('t');
+    // 2026-05-20T15:00:00Z is 18:00 in Moscow (UTC+3)
+    await waitForFrame(lastFrame, (f) => f.includes('20.05.2026 18:00▎'));
+  });
+
+  it('detail edit-due: empty + enter clears the due date (dueAt:null)', async () => {
+    const { api, stdin, lastFrame } = await openDetail({
+      dueAt: '2026-05-20T15:00:00.000Z',
+      dueHasTime: true,
+    });
+    stdin.write('t');
+    await waitForFrame(lastFrame, (f) => f.includes('20.05.2026 18:00▎'));
+    // Clear all chars: 16 chars in "20.05.2026 18:00"
+    for (let i = 0; i < 20; i++) stdin.write('');
+    await waitForFrame(lastFrame, (f) => f.includes('(пусто)'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('срок очищен'));
+    expect(api.updateTask).toHaveBeenCalledWith(100, { dueAt: null }, 'idem-key-1');
+  });
+
+  it('detail edit-due: valid date submits ISO with dueHasTime', async () => {
+    const { api, stdin, lastFrame } = await openDetail({ dueAt: null });
+    stdin.write('t');
+    await waitForFrame(lastFrame, (f) => f.includes('(пусто)▎'));
+    for (const ch of '20.05.2030 09:30') stdin.write(ch);
+    await waitForFrame(lastFrame, (f) => f.includes('20.05.2030 09:30▎'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('срок обновлён'));
+    expect(api.updateTask).toHaveBeenCalledWith(
+      100,
+      { dueAt: '2030-05-20T06:30:00.000Z', dueHasTime: true },
+      'idem-key-1',
+    );
+  });
+
+  it('detail edit-due: bad format shows error, no API call', async () => {
+    const { api, stdin, lastFrame } = await openDetail({ dueAt: null });
+    stdin.write('t');
+    await waitForFrame(lastFrame, (f) => f.includes('(пусто)▎'));
+    for (const ch of 'not-a-date') stdin.write(ch);
+    await waitForFrame(lastFrame, (f) => f.includes('not-a-date▎'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('Формат: DD.MM.YYYY'));
+    expect(api.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('detail: "x" then "y" deletes and returns to list', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('x');
+    await waitForFrame(lastFrame, (f) => f.includes('Удалить задачу?'));
+    stdin.write('y');
+    await waitForFrame(lastFrame, (f) => f.includes('#100 удалена'));
+    expect(api.deleteTask).toHaveBeenCalledWith(100, 'idem-key-1');
+    // Returned to list view (pager line visible).
+    expect(lastFrame()!).toContain('Страница');
+  });
+
+  it('detail: "x" then "n" cancels delete (no API call)', async () => {
+    const { api, stdin, lastFrame } = await openDetail();
+    stdin.write('x');
+    await waitForFrame(lastFrame, (f) => f.includes('Удалить задачу?'));
+    stdin.write('n');
+    await waitForFrame(lastFrame, (f) => !f.includes('Удалить задачу?'));
+    expect(api.deleteTask).not.toHaveBeenCalled();
+    // Still in detail.
+    expect(lastFrame()!).toContain('Карточка задачи');
+  });
+
+  it('detail edit-title: ignores "q" (treated as a character, not exit)', async () => {
+    const { stdin, lastFrame } = await openDetail();
+    stdin.write('e');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
+    stdin.write('q');
+    await waitForFrame(lastFrame, (f) => f.includes('pick milkq▎'));
+  });
+});

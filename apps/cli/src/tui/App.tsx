@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 
 import type { ApiViewerClient } from '@orbit/api-client';
-import { PAGE_SIZE, type TaskDto } from '@orbit/contracts';
+import { PAGE_SIZE, parseDueDateInput, type TaskDto } from '@orbit/contracts';
 
 import { renderDueCell } from '../render/task.js';
 import { useTasks, type TaskMode } from './use-tasks.js';
@@ -13,6 +13,8 @@ const MODE_LABEL: Record<TaskMode, string> = {
   'due-soon': 'скоро дедлайн',
   done: 'закрытые',
 };
+
+type SubMode = null | 'edit-title' | 'edit-due' | 'confirm-delete';
 
 export type AppProps = {
   client: ApiViewerClient;
@@ -33,6 +35,8 @@ export function App({
   const [page, setPage] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [view, setView] = useState<'list' | 'detail'>('list');
+  const [subMode, setSubMode] = useState<SubMode>(null);
+  const [editBuffer, setEditBuffer] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -40,24 +44,36 @@ export function App({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const selected = items[cursor];
 
-  // Reset page + cursor when mode changes.
   useEffect(() => {
     setPage(0);
     setCursor(0);
   }, [mode]);
 
-  // Clamp cursor when items shrink.
   useEffect(() => {
     if (cursor >= items.length) setCursor(Math.max(0, items.length - 1));
   }, [items.length, cursor]);
 
-  // Mirror reactive state into a ref so the (stable) input handler always
-  // sees the latest values. Without this, ink's useInput effect re-attaches
-  // after a re-render but on the React 18 scheduler — keystrokes that fire
-  // before re-attach run against a stale closure (notably `items.length === 0`
-  // right after the initial fetch). Tests confirmed the race directly.
-  const stateRef = useRef({ items, cursor, view, mode, totalPages });
-  stateRef.current = { items, cursor, view, mode, totalPages };
+  // Stable handler reads latest state via a ref — see commit f319c58 for the
+  // race rationale (input arrives before ink's useEffect re-attaches the
+  // listener after a re-render with new items).
+  const stateRef = useRef({
+    items,
+    cursor,
+    view,
+    subMode,
+    editBuffer,
+    mode,
+    totalPages,
+  });
+  stateRef.current = {
+    items,
+    cursor,
+    view,
+    subMode,
+    editBuffer,
+    mode,
+    totalPages,
+  };
 
   const mutateStatus = useCallback(
     async (task: TaskDto, status: 'open' | 'done'): Promise<void> => {
@@ -77,24 +93,155 @@ export function App({
     [client, idempotencyKey],
   );
 
+  const submitTitle = useCallback(
+    async (task: TaskDto, raw: string): Promise<void> => {
+      const title = raw.trim();
+      if (!title) {
+        setMessage('Название не может быть пустым');
+        return;
+      }
+      try {
+        await client.updateTask(task.numId, { title }, idempotencyKey());
+        setMessage(`#${task.numId} переименована`);
+        setSubMode(null);
+        setEditBuffer('');
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        setMessage(`Ошибка: ${m}`);
+      }
+    },
+    [client, idempotencyKey],
+  );
+
+  const submitDue = useCallback(
+    async (task: TaskDto, raw: string): Promise<void> => {
+      const trimmed = raw.trim();
+      try {
+        if (trimmed === '') {
+          await client.updateTask(task.numId, { dueAt: null }, idempotencyKey());
+          setMessage(`#${task.numId}: срок очищен`);
+        } else {
+          const parsed = parseDueDateInput(trimmed, now);
+          if (!parsed.ok) {
+            setMessage(
+              parsed.error === 'past'
+                ? 'Дата уже прошла'
+                : 'Формат: DD.MM.YYYY [HH:MM]',
+            );
+            return;
+          }
+          await client.updateTask(
+            task.numId,
+            { dueAt: parsed.dueAt.toISOString(), dueHasTime: parsed.dueHasTime },
+            idempotencyKey(),
+          );
+          setMessage(`#${task.numId}: срок обновлён`);
+        }
+        setSubMode(null);
+        setEditBuffer('');
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        setMessage(`Ошибка: ${m}`);
+      }
+    },
+    [client, idempotencyKey, now],
+  );
+
+  const submitDelete = useCallback(
+    async (task: TaskDto): Promise<void> => {
+      try {
+        await client.deleteTask(task.numId, idempotencyKey());
+        setMessage(`#${task.numId} удалена`);
+        setSubMode(null);
+        setView('list');
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        setMessage(`Ошибка: ${m}`);
+      }
+    },
+    [client, idempotencyKey],
+  );
+
   const handler = useCallback(
     (input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]) => {
       const s = stateRef.current;
-      const selected = s.items[s.cursor];
+      const sel = s.items[s.cursor];
 
-      if (input === 'q') {
-        if (s.view === 'detail') setView('list');
-        else if (exitOnQuit) exit();
+      // ── Text-input sub-modes ──────────────────────────────────────────
+      if (s.subMode === 'edit-title' || s.subMode === 'edit-due') {
+        if (key.escape) {
+          setSubMode(null);
+          setEditBuffer('');
+          return;
+        }
+        if (key.return) {
+          if (!sel) return;
+          if (s.subMode === 'edit-title') void submitTitle(sel, s.editBuffer);
+          else void submitDue(sel, s.editBuffer);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setEditBuffer((b) => b.slice(0, -1));
+          return;
+        }
+        if (input.length > 0 && !key.ctrl && !key.meta) {
+          setEditBuffer((b) => b + input);
+        }
         return;
       }
-      if (key.escape) {
-        if (s.view === 'detail') setView('list');
-        else if (exitOnQuit) exit();
+
+      if (s.subMode === 'confirm-delete') {
+        if (input === 'y' || input === 'Y') {
+          if (sel) void submitDelete(sel);
+          return;
+        }
+        if (input === 'n' || input === 'N' || key.escape) {
+          setSubMode(null);
+          return;
+        }
         return;
       }
 
-      if (s.view === 'detail') return;
+      // ── Detail view (no sub-mode) ─────────────────────────────────────
+      if (s.view === 'detail') {
+        if (key.escape || input === 'q') {
+          setView('list');
+          return;
+        }
+        if (!sel) return;
+        if (input === 'd' && sel.status === 'open') {
+          void mutateStatus(sel, 'done');
+          return;
+        }
+        if (input === 'o' && sel.status === 'done') {
+          void mutateStatus(sel, 'open');
+          return;
+        }
+        if (input === 'e') {
+          setSubMode('edit-title');
+          setEditBuffer(sel.title);
+          return;
+        }
+        if (input === 't') {
+          setSubMode('edit-due');
+          setEditBuffer(formatDueForInput(sel.dueAt, sel.dueHasTime));
+          return;
+        }
+        if (input === 'x' || input === 'X') {
+          setSubMode('confirm-delete');
+          return;
+        }
+        return;
+      }
 
+      // ── List view ─────────────────────────────────────────────────────
+      if (input === 'q' || key.escape) {
+        if (exitOnQuit) exit();
+        return;
+      }
       if (input === 'g' || input === 'r') {
         setRefreshKey((k) => k + 1);
         setMessage('Обновлено');
@@ -129,19 +276,19 @@ export function App({
         return;
       }
       if (key.return) {
-        if (selected) setView('detail');
+        if (sel) setView('detail');
         return;
       }
-      if (input === 'd' && selected && selected.status === 'open') {
-        void mutateStatus(selected, 'done');
+      if (input === 'd' && sel && sel.status === 'open') {
+        void mutateStatus(sel, 'done');
         return;
       }
-      if (input === 'o' && selected && selected.status === 'done') {
-        void mutateStatus(selected, 'open');
+      if (input === 'o' && sel && sel.status === 'done') {
+        void mutateStatus(sel, 'open');
         return;
       }
     },
-    [exit, exitOnQuit, mutateStatus],
+    [exit, exitOnQuit, mutateStatus, submitTitle, submitDue, submitDelete],
   );
 
   useInput(handler);
@@ -160,7 +307,12 @@ export function App({
           now={now}
         />
       ) : selected ? (
-        <DetailView task={selected} now={now} />
+        <DetailView
+          task={selected}
+          now={now}
+          subMode={subMode}
+          editBuffer={editBuffer}
+        />
       ) : null}
       <Box marginTop={1}>
         <Text dimColor>
@@ -175,14 +327,29 @@ export function App({
         </Box>
       ) : null}
       <Box marginTop={1}>
-        <Text dimColor>
-          {view === 'list'
-            ? '↑↓ навигация · ←→ страница · enter открыть · d закрыть · o переоткрыть · m режим · g обновить · q выход'
-            : 'esc/q назад'}
-        </Text>
+        <Text dimColor>{helpBar(view, subMode)}</Text>
       </Box>
     </Box>
   );
+}
+
+function helpBar(
+  view: 'list' | 'detail',
+  subMode: SubMode,
+): string {
+  if (view === 'list') {
+    return '↑↓ навигация · ←→ страница · enter открыть · d закрыть · o переоткрыть · m режим · g обновить · q выход';
+  }
+  if (subMode === 'edit-title') {
+    return 'печатайте · enter сохранить · esc отмена';
+  }
+  if (subMode === 'edit-due') {
+    return 'DD.MM.YYYY [HH:MM] · пусто = очистить · enter сохранить · esc отмена';
+  }
+  if (subMode === 'confirm-delete') {
+    return 'y — удалить · n / esc — отмена';
+  }
+  return 'd закрыть · o переоткрыть · e название · t срок · x удалить · q назад';
 }
 
 function ListView({
@@ -243,20 +410,69 @@ function ListView({
 function DetailView({
   task,
   now,
+  subMode,
+  editBuffer,
 }: {
   task: TaskDto;
   now: Date;
+  subMode: SubMode;
+  editBuffer: string;
 }): React.JSX.Element {
   const due = task.dueAt ? renderDueCell(task, now) : '(нет)';
   return (
     <Box flexDirection="column">
       <Text bold>
-        #{task.numId}  {task.title}
+        #{task.numId}{' '}
+        {subMode === 'edit-title' ? (
+          <Text color="yellow">{editBuffer}▎</Text>
+        ) : (
+          task.title
+        )}
       </Text>
       <Text>Статус: {task.status}</Text>
-      <Text>Срок:   {due}</Text>
+      <Text>
+        Срок:{' '}
+        {subMode === 'edit-due' ? (
+          <Text color="yellow">{editBuffer || '(пусто)'}▎</Text>
+        ) : (
+          due
+        )}
+      </Text>
       <Text>Создано: {task.createdAt}</Text>
       {task.doneAt ? <Text>Закрыто: {task.doneAt}</Text> : null}
+      {subMode === 'confirm-delete' ? (
+        <Box marginTop={1}>
+          <Text color="red">Удалить задачу? (y/n)</Text>
+        </Box>
+      ) : null}
     </Box>
   );
+}
+
+function formatDueForInput(
+  dueAt: string | null,
+  dueHasTime: boolean,
+): string {
+  if (!dueAt) return '';
+  const d = new Date(dueAt);
+  const dayParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const y = dayParts.find((p) => p.type === 'year')!.value;
+  const m = dayParts.find((p) => p.type === 'month')!.value;
+  const dd = dayParts.find((p) => p.type === 'day')!.value;
+  let s = `${dd}.${m}.${y}`;
+  if (dueHasTime) {
+    const time = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Moscow',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d);
+    s += ' ' + time;
+  }
+  return s;
 }
