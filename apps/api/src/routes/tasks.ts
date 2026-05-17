@@ -1,12 +1,12 @@
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
-import type { PrismaClient, Task } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import {
   CreateTaskInputSchema,
+  PAGE_SIZE,
   UpdateTaskInputSchema,
 } from "@orbit/contracts";
 import { toTaskDto } from "../mappers/dto.js";
-import { computeDueSoonCutoff, DUE_SOON_DAYS, PAGE_SIZE } from "../due-soon.js";
 import {
   ListTasksQuerySchema,
   NumIdParamSchema,
@@ -26,7 +26,7 @@ import { badRequest, notFound } from "../http-errors.js";
 export function tasksRoutes(prisma: PrismaClient): Router {
   const r = Router();
 
-  // GET /v1/tasks?mode=my|due-soon&page=N
+  // GET /v1/tasks?mode=my|done&page=N
   r.get("/", async (req, res, next) => {
     try {
       const parsed = ListTasksQuerySchema.safeParse(req.query);
@@ -53,64 +53,24 @@ export function tasksRoutes(prisma: PrismaClient): Router {
         return;
       }
 
-      if (mode === "due-soon") {
-        const cutoff = computeDueSoonCutoff(new Date(), DUE_SOON_DAYS);
-        const where = {
-          status: "open" as const,
-          assignedToId: viewer.id,
-          dueAt: { lt: cutoff, not: null },
-        };
-        const [tasks, total] = await Promise.all([
-          prisma.task.findMany({
-            where,
-            orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
-            skip,
-            take: PAGE_SIZE,
-            include: { assignedTo: true, createdBy: true },
-          }),
-          prisma.task.count({ where }),
-        ]);
-        res.json({
-          items: tasks.map(toTaskDto),
-          page,
-          total,
-        });
-        return;
-      }
-
-      // mode === "my": due-soon zone first (dueAt within DUE_SOON_DAYS in
-      // BOT_TZ, including overdue), then everything else by createdAt DESC.
-      // Prisma orderBy can't express the CASE; use $queryRaw for the page
-      // and a normal count for total. Mirrors apps/bot/src/bot.ts:74-86.
-      const cutoff = computeDueSoonCutoff(new Date(), DUE_SOON_DAYS);
+      // mode === "my": open tasks sorted by dueAt ASC (NULLS LAST), then by
+      // createdAt DESC. Tasks with a due date always surface above ones
+      // without, irrespective of whether they are overdue.
       const where = { status: "open" as const, assignedToId: viewer.id };
-      const [rawTasks, total] = await Promise.all([
-        prisma.$queryRaw<Task[]>`
-          SELECT *
-          FROM "Task"
-          WHERE "status" = 'open'::"TaskStatus" AND "assignedToId" = ${viewer.id}
-          ORDER BY
-            CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN 0 ELSE 1 END ASC,
-            CASE WHEN "dueAt" IS NOT NULL AND "dueAt" < ${cutoff} THEN "dueAt" END ASC NULLS LAST,
-            "createdAt" DESC
-          LIMIT ${PAGE_SIZE} OFFSET ${skip}
-        `,
+      const [tasks, total] = await Promise.all([
+        prisma.task.findMany({
+          where,
+          orderBy: [
+            { dueAt: { sort: "asc", nulls: "last" } },
+            { createdAt: "desc" },
+          ],
+          skip,
+          take: PAGE_SIZE,
+          include: { assignedTo: true, createdBy: true },
+        }),
         prisma.task.count({ where }),
       ]);
-
-      // $queryRaw doesn't follow `include`, so fetch the related users once.
-      const fullTasks = await prisma.task.findMany({
-        where: { id: { in: rawTasks.map((t) => t.id) } },
-        include: { assignedTo: true, createdBy: true },
-      });
-      // Preserve the raw query ordering.
-      const byId = new Map(fullTasks.map((t) => [t.id, t]));
-      const items = rawTasks
-        .map((t) => byId.get(t.id))
-        .filter((t): t is (typeof fullTasks)[number] => t != null)
-        .map(toTaskDto);
-
-      res.json({ items, page, total });
+      res.json({ items: tasks.map(toTaskDto), page, total });
     } catch (e) {
       next(e);
     }
