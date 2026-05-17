@@ -61,8 +61,6 @@ export async function executeWhoami(
     if (warnLine) err(warnLine);
   } else {
     log(`numId:       ${user.numId}`);
-    log(`Username:    ${user.username ?? '(none)'}`);
-    log(`Name:        ${user.firstName ?? '(none)'}`);
     log(`Telegram ID: ${user.telegramUserId}`);
     if (warnLine) log(warnLine);
   }

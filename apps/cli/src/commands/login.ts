@@ -44,13 +44,13 @@ export async function executeLogin(
     return exitFromError(e);
   }
 
+  const label = String(user.numId);
   await save({
     baseUrl,
     token: opts.token,
-    userLabel: user.username ?? user.firstName ?? String(user.numId),
+    userLabel: label,
   });
 
-  const label = user.username ?? user.firstName ?? String(user.numId);
   log(`Logged in as ${label}.`);
   return EXIT_OK;
 }

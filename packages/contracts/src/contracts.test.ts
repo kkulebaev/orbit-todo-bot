@@ -80,8 +80,6 @@ describe("UserDtoSchema", () => {
     const result = UserDtoSchema.safeParse({
       numId: 1,
       telegramUserId: "123456789",
-      username: "alice",
-      firstName: null,
     });
     expect(result.success).toBe(true);
   });
@@ -90,8 +88,6 @@ describe("UserDtoSchema", () => {
     const result = UserDtoSchema.safeParse({
       numId: 1,
       telegramUserId: "abc123",
-      username: null,
-      firstName: null,
     });
     expect(result.success).toBe(false);
   });
@@ -100,8 +96,6 @@ describe("UserDtoSchema", () => {
     const result = UserDtoSchema.safeParse({
       numId: 1,
       telegramUserId: "",
-      username: null,
-      firstName: null,
     });
     expect(result.success).toBe(false);
   });

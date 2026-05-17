@@ -14,8 +14,6 @@ export type ViewerView = {
   id: string;
   numId: number;
   telegramUserId: bigint;
-  username: string | null;
-  firstName: string | null;
 };
 
 export function fromApiUser(dto: UserDto): ViewerView {
@@ -23,7 +21,5 @@ export function fromApiUser(dto: UserDto): ViewerView {
     id: "",
     numId: dto.numId,
     telegramUserId: BigInt(dto.telegramUserId),
-    username: dto.username,
-    firstName: dto.firstName,
   };
 }

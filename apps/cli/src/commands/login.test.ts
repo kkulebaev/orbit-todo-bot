@@ -66,8 +66,6 @@ describe('login', () => {
         JSON.stringify({
           numId: 5,
           telegramUserId: '42',
-          username: 'alice',
-          firstName: 'Alice',
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
@@ -83,9 +81,9 @@ describe('login', () => {
     expect(save.mock.calls[0][0]).toMatchObject({
       baseUrl: 'https://api.example.com',
       token: validPat,
-      userLabel: 'alice',
+      userLabel: '5',
     });
-    expect(logs.out.join('\n')).toContain('Logged in as alice');
+    expect(logs.out.join('\n')).toContain('Logged in as 5');
   });
 
   // AC-P1-7: token plaintext never appears in stdout / stderr.

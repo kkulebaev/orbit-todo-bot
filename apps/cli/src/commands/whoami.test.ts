@@ -29,7 +29,6 @@ describe('whoami', () => {
     expect(code).toBe(EXIT_OK);
     const joined = l.out.join('\n');
     expect(joined).toContain('numId:');
-    expect(joined).toContain('Username:');
     expect(joined).toContain('Telegram ID:');
   });
 

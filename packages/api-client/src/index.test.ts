@@ -25,8 +25,6 @@ const TASK_LIST = { items: [TASK_DTO], page: 0, total: 1 };
 const USER_DTO = {
   numId: 42,
   telegramUserId: TG_USER_ID,
-  username: 'tester',
-  firstName: 'Test',
 };
 
 /** Minimal Response-like object for mocking — no real network. */

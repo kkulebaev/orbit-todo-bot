@@ -36,8 +36,6 @@ export function makeFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   const defaultUser: UserDto = {
     numId: 1,
     telegramUserId: '42',
-    username: 'alice',
-    firstName: 'Alice',
   };
   const defaultList: TaskListResponse = { items: [], page: 0, total: 0 };
   const defaultVersion: VersionInfoDto = {

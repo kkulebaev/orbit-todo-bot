@@ -12,8 +12,6 @@ export function toUserDto(u: User): UserDto {
   return {
     numId: u.numId,
     telegramUserId: u.telegramUserId.toString(),
-    username: u.username,
-    firstName: u.firstName,
   };
 }
 

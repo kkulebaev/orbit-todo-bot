@@ -31,8 +31,6 @@ async function main() {
     create: {
       id: userId,
       telegramUserId: BigInt(0),
-      username: "orbit-bot",
-      firstName: "Orbit Bot",
     },
   });
   await prisma.personalAccessToken.upsert({
