@@ -60,9 +60,9 @@ Three-layer split designed to keep grammY/Prisma out of unit tests:
 
 ### Pending-action state machine
 
-Multi-step UI flows (edit title, confirm draft add, "press ➕ then send text") are persisted as rows in the `PendingAction` table rather than in-memory. Each row carries `kind`, optional `taskId`, optional UI-return context (`panelMode`, `panelPage`, `panelMessageId`), and `draftTitle`. The `message:text` handler in `apps/bot/src/bot.ts` looks up the most recent `PendingAction` for the user and branches on `kind`. The `panelMessageId` is reused so we `editMessageText` the original panel instead of spamming new messages.
+Multi-step UI flows (edit title, confirm draft add, "press ➕ then send text") are persisted as rows in the `PendingAction` table rather than in-memory. Each row carries `kind`, optional `taskId`, and an opaque bot-owned JSON string in the `payload` column (bot serializes UI-return context — `panelMode`, `panelPage`, `panelMessageId`, `promptMessageId`, `draftTitle` — into that JSON via `session-payload.ts`). The API treats `payload` as a black box. The `message:text` handler in `apps/bot/src/bot.ts` looks up the most recent `PendingAction` for the user and branches on `kind`. The bot decodes `panelMessageId` out of the payload so we `editMessageText` the original panel instead of spamming new messages.
 
-All session reads/writes go through the `SessionStore` interface in `apps/bot/src/session-store.ts`. The only implementation is `createApiSessionStore(apiClient)` — the bot has no direct DB access. The store serializes UI metadata into an opaque JSON `payload` (see `session-payload.ts`) and links the row to its task via the optional `taskNumId` field on `POST /v1/sessions` so a later `POST /v1/sessions/:id/commit` can atomically update the task and delete the session in one `$transaction` server-side.
+All session reads/writes go through the `SessionStore` interface in `apps/bot/src/session-store.ts`. The only implementation is `createApiSessionStore(apiClient)` — the bot has no direct DB access. The store links the row to its task via the optional `taskNumId` field on `POST /v1/sessions` so a later `POST /v1/sessions/:id/commit` atomically updates the task and deletes the session in one `$transaction` server-side. `commit` requires a `taskPatch`; for plain session removal use `DELETE /v1/sessions/:id`.
 
 ### "Message is not modified" handling
 
@@ -72,11 +72,11 @@ Telegram returns 400 when an `editMessageText` would produce identical content (
 
 `apps/api/prisma/schema.prisma`:
 - `User` — keyed by UUID `id`; `numId` is a stable autoincrement for display, `telegramUserId` is `BigInt` (cast `BigInt(from.id)` when querying).
-- `Task` — `numId` (autoincrement) is what's embedded into `callback_data`, NOT `id`. `status` is the `TaskStatus` enum (`open`/`done`); `assignedToId` scopes lists per viewer.
-- `PendingAction` — see state machine above. `kind` is the `PendingActionKind` enum (`editTitle`, `addTask`, `addTaskDraft`, `setDueDate`). The `task` relation uses `onDelete: Cascade` — deleting a Task cascades to its PendingActions.
-- `Invite` — currently unused by handlers but defined.
+- `Task` — `numId` (autoincrement) is what's embedded into `callback_data`, NOT `id`. `status` is the `TaskStatus` enum (`open`/`done`); `ownerId` scopes lists per viewer (one user owns + sees a task — assignment to other users is not supported).
+- `PendingAction` — see state machine above. `kind` is the `PendingActionKind` enum (`editTitle`, `addTask`, `addTaskDraft`, `setDueDate`); `payload` holds an opaque bot-owned JSON string. The `task` relation uses `onDelete: Cascade` — deleting a Task cascades to its PendingActions.
+- `PersonalAccessToken` — PAT auth (user PAT + bot PAT distinguished by `canImpersonate`).
 
-Indexes on `(status, assignedToId)` and `(status, createdById)` back the list queries in `getTasksForMode`.
+Index `(status, ownerId)` backs the list queries in `getTasksForMode`.
 
 ## Conventions
 
@@ -84,5 +84,5 @@ Indexes on `(status, assignedToId)` and `(status, createdById)` back the list qu
 - Node 24 (`.nvmrc`, `engines.node`).
 - Tests live next to sources as `*.test.ts`; `tsconfig.json` excludes them from `tsc` output, and `vitest.config.ts` includes only them.
 - Logs must not include full Telegram update bodies (truncate to 120 chars, see `apps/bot/src/server.ts`). Don't add verbose logging that could leak user text.
-- Privacy: list queries are scoped to the viewer (`assignedToId = viewer.id`) — preserve this when adding new list queries.
+- Privacy: list queries are scoped to the viewer (`ownerId = viewer.id`) — preserve this when adding new list queries.
 - `@orbit/contracts` (`packages/contracts/`) owns all Zod schemas for HTTP request/response types. Import from there; never duplicate schema definitions in bot or api.

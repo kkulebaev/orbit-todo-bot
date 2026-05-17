@@ -28,7 +28,7 @@ CLI (with an interactive TUI mode).
 
 - Create tasks with `/add <text>`, or just send any text
 - Lists:
-  - **⏳ В работе** (open) with due-soon priority surface
+  - **⏳ В работе** (open) sorted by due date (tasks with `dueAt` surface first, NULLS LAST)
   - **🗂️ Выполненные** (done)
 - Task actions via inline buttons:
   - Done / Reopen
@@ -89,7 +89,7 @@ Base: `http://<api-host>/v1`. All endpoints require:
 |---|---|---|
 | `GET` | `/healthz` | Public, no auth |
 | `GET` | `/v1/users/me` | Upserts viewer |
-| `GET` | `/v1/tasks?mode=my\|due-soon\|done&page=N` | List |
+| `GET` | `/v1/tasks?mode=my\|done&page=N` | List |
 | `GET` | `/v1/tasks/:numId` | 404 on owner mismatch |
 | `POST` | `/v1/tasks` | Idempotency-Key |
 | `PATCH` | `/v1/tasks/:numId` | 404 on owner mismatch |
@@ -98,7 +98,7 @@ Base: `http://<api-host>/v1`. All endpoints require:
 | `POST` | `/v1/sessions` | Opaque payload |
 | `PATCH` | `/v1/sessions/:id` | |
 | `DELETE` | `/v1/sessions/:id` | |
-| `POST` | `/v1/sessions/:id/commit` | Atomic task update + session delete |
+| `POST` | `/v1/sessions/:id/commit` | Atomic task update + session delete (`taskPatch` required; use `DELETE /v1/sessions/:id` for plain removal) |
 
 ---
 
@@ -205,7 +205,7 @@ curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
 
 - Do not commit `.env` (`.env.example` is the template).
 - Webhook logs are truncated to 120 chars — keep that invariant.
-- List queries are scoped by `assignedToId = viewer.id` in API (mutations
+- List queries are scoped by `ownerId = viewer.id` in API (mutations
   return 404, not 403, on owner mismatch — privacy preserved).
 
 ---
