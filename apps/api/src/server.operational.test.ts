@@ -86,7 +86,6 @@ describe("AC-P2-10 HSTS header", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 
@@ -153,7 +152,6 @@ describe("AC-P2-5 + AC-P2-9 trust proxy + rate limit", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 
@@ -276,7 +274,6 @@ describe("AC-P2-14..18 pino log enrichment", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 
@@ -434,7 +431,6 @@ describe("AC-P2-21 rate-limit 429 log includes rejected IP", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 

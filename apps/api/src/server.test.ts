@@ -53,7 +53,6 @@ describe("auth — resolveCredential", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 
@@ -280,7 +279,6 @@ describe("auth — CIDR enforcement for canImpersonate=true (AC-P2-25)", () => {
     await db.prisma.personalAccessToken.deleteMany();
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
   });
 

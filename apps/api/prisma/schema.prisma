@@ -24,7 +24,6 @@ model User {
 
   createdTasks   Task[]                @relation("TaskCreatedBy")
   assignedTasks  Task[]                @relation("TaskAssignedTo")
-  invitesSent    Invite[]
   pendingActions PendingAction[]
   tokens         PersonalAccessToken[]
 }
@@ -42,13 +41,6 @@ model PersonalAccessToken {
   canImpersonate Boolean   @default(false)
 
   @@index([userId, revokedAt])
-}
-
-model Invite {
-  username    String   @id
-  invitedById String
-  invitedBy   User     @relation(fields: [invitedById], references: [id])
-  createdAt   DateTime @default(now())
 }
 
 model Task {

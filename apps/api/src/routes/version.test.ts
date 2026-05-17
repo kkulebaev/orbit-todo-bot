@@ -41,7 +41,6 @@ describe("version route", () => {
     await db.prisma.pendingAction.deleteMany();
     await db.prisma.task.deleteMany();
     await db.prisma.personalAccessToken.deleteMany();
-    await db.prisma.invite.deleteMany();
     await db.prisma.user.deleteMany();
 
     const fixture = await createTestPat(db.prisma, {
