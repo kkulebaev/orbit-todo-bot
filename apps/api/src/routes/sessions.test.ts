@@ -207,7 +207,7 @@ describe("sessions routes", () => {
         kind: "editTitle",
         userId: user!.id,
         taskId: task!.id,
-        draftTitle: '{"panelPage":0}',
+        payload: '{"panelPage":0}',
       },
     });
 

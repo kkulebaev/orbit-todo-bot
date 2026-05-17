@@ -84,8 +84,8 @@ model PendingAction {
   taskId String?
   task   Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  // Draft payload for pending UI flows
-  draftTitle String?
+  // Opaque payload (bot-owned JSON; API treats as a string)
+  payload String?
 
   @@index([userId, createdAt])
   @@index([expiresAt])

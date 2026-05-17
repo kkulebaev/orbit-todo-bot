@@ -70,7 +70,7 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
       const session = await prisma.pendingAction.create({
         data: {
           kind,
-          draftTitle: payload,
+          payload,
           expiresAt,
           userId: req.viewer!.id,
           ...(taskId ? { taskId } : {}),
@@ -96,8 +96,8 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
       });
       if (!existing) throw notFound();
 
-      const data: { draftTitle?: string; expiresAt?: Date } = {};
-      if (payload !== undefined) data.draftTitle = payload;
+      const data: { payload?: string; expiresAt?: Date } = {};
+      if (payload !== undefined) data.payload = payload;
       if (ttlSeconds !== undefined) {
         data.expiresAt = new Date(Date.now() + ttlSeconds * 1000);
       }

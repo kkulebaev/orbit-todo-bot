@@ -44,7 +44,7 @@ export function toTaskDto(
  *
  * The `PendingAction` model is repurposed as the persisted session store
  * (PA-2 opaque endpoints). The bot is the sole producer/consumer of `payload`
- * — API treats it as an opaque string and stores it in `draftTitle`.
+ * — API treats it as an opaque string.
  *
  * `expiresAt` is always set on the create path (see sessionsRoutes), so we
  * non-null assert here.
@@ -53,7 +53,7 @@ export function toSessionDto(p: PendingAction): SessionDto {
   return {
     id: p.id,
     kind: p.kind,
-    payload: p.draftTitle ?? "",
+    payload: p.payload ?? "",
     expiresAt: p.expiresAt!.toISOString(),
     createdAt: p.createdAt.toISOString(),
   };
