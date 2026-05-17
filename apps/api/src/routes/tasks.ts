@@ -38,14 +38,13 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       const skip = page * PAGE_SIZE;
 
       if (mode === "done") {
-        const where = { status: "done" as const, assignedToId: viewer.id };
+        const where = { status: "done" as const, ownerId: viewer.id };
         const [tasks, total] = await Promise.all([
           prisma.task.findMany({
             where,
             orderBy: [{ doneAt: "desc" }, { createdAt: "desc" }],
             skip,
             take: PAGE_SIZE,
-            include: { assignedTo: true, createdBy: true },
           }),
           prisma.task.count({ where }),
         ]);
@@ -56,7 +55,7 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       // mode === "my": open tasks sorted by dueAt ASC (NULLS LAST), then by
       // createdAt DESC. Tasks with a due date always surface above ones
       // without, irrespective of whether they are overdue.
-      const where = { status: "open" as const, assignedToId: viewer.id };
+      const where = { status: "open" as const, ownerId: viewer.id };
       const [tasks, total] = await Promise.all([
         prisma.task.findMany({
           where,
@@ -66,7 +65,6 @@ export function tasksRoutes(prisma: PrismaClient): Router {
           ],
           skip,
           take: PAGE_SIZE,
-          include: { assignedTo: true, createdBy: true },
         }),
         prisma.task.count({ where }),
       ]);
@@ -83,8 +81,7 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       try {
         const { numId } = parseNumIdOrThrow(req);
         const task = await prisma.task.findFirst({
-          where: { numId, assignedToId: req.viewer!.id },
-          include: { assignedTo: true, createdBy: true },
+          where: { numId, ownerId: req.viewer!.id },
         });
         if (!task) throw notFound();
         res.json(toTaskDto(task));
@@ -108,10 +105,8 @@ export function tasksRoutes(prisma: PrismaClient): Router {
           title,
           dueAt: dueAt ? new Date(dueAt) : null,
           dueHasTime: dueHasTime ?? false,
-          createdById: viewer.id,
-          assignedToId: viewer.id,
+          ownerId: viewer.id,
         },
-        include: { assignedTo: true, createdBy: true },
       });
       res.status(201).json(toTaskDto(task));
     } catch (e) {
@@ -129,7 +124,7 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       }
       const patch = parsed.data;
       const existing = await prisma.task.findFirst({
-        where: { numId, assignedToId: req.viewer!.id },
+        where: { numId, ownerId: req.viewer!.id },
         select: { id: true },
       });
       if (!existing) throw notFound();
@@ -156,7 +151,6 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       const task = await prisma.task.update({
         where: { id: existing.id },
         data,
-        include: { assignedTo: true, createdBy: true },
       });
       res.json(toTaskDto(task));
     } catch (e) {
@@ -171,7 +165,7 @@ export function tasksRoutes(prisma: PrismaClient): Router {
       // Owner-scoped delete in a single statement to avoid TOCTOU between the
       // existence check and the delete. PendingAction rows cascade via FK.
       const result = await prisma.task.deleteMany({
-        where: { numId, assignedToId: req.viewer!.id },
+        where: { numId, ownerId: req.viewer!.id },
       });
       if (result.count === 0) throw notFound();
       res.status(204).end();

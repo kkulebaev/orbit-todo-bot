@@ -1,5 +1,5 @@
 import type { User, Task, PendingAction } from "@prisma/client";
-import type { UserDto, TaskDto, SessionDto } from "@orbit/contracts";
+import type { SessionDto, TaskDto, UserDto } from "@orbit/contracts";
 
 /**
  * Map Prisma User → UserDto.
@@ -16,14 +16,10 @@ export function toUserDto(u: User): UserDto {
 }
 
 /**
- * Map Prisma Task (with createdBy and assignedTo relations) → TaskDto.
- *
- * Caller must include `{ assignedTo: true, createdBy: true }` in the Prisma
- * query so we can surface the stable `numId` of each user.
+ * Map Prisma Task → TaskDto. Owner relation is not required (the wire
+ * format no longer exposes per-user ids on each task).
  */
-export function toTaskDto(
-  t: Task & { assignedTo: User; createdBy: User },
-): TaskDto {
+export function toTaskDto(t: Task): TaskDto {
   return {
     numId: t.numId,
     title: t.title,
@@ -32,8 +28,6 @@ export function toTaskDto(
     dueHasTime: t.dueHasTime,
     createdAt: t.createdAt.toISOString(),
     doneAt: t.doneAt?.toISOString() ?? null,
-    createdByNumId: t.createdBy.numId,
-    assignedToNumId: t.assignedTo.numId,
   };
 }
 

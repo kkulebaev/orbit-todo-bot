@@ -20,8 +20,7 @@ model User {
   telegramUserId BigInt   @unique
   createdAt      DateTime @default(now())
 
-  createdTasks   Task[]                @relation("TaskCreatedBy")
-  assignedTasks  Task[]                @relation("TaskAssignedTo")
+  ownedTasks     Task[]
   pendingActions PendingAction[]
   tokens         PersonalAccessToken[]
 }
@@ -51,16 +50,12 @@ model Task {
   dueAt      DateTime?
   dueHasTime Boolean    @default(false)
 
-  createdById String
-  createdBy   User   @relation("TaskCreatedBy", fields: [createdById], references: [id])
-
-  assignedToId String
-  assignedTo   User   @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
 
   pendingEdits PendingAction[]
 
-  @@index([status, assignedToId])
-  @@index([status, createdById])
+  @@index([status, ownerId])
 }
 
 enum PendingActionKind {

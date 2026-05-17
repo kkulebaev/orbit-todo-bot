@@ -16,8 +16,6 @@ const TASK_DTO = {
   dueHasTime: false,
   createdAt: '2026-01-01T00:00:00.000Z',
   doneAt: null,
-  createdByNumId: 1,
-  assignedToNumId: 1,
 };
 
 const TASK_LIST = { items: [TASK_DTO], page: 0, total: 1 };

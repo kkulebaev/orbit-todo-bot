@@ -214,7 +214,7 @@ describe("tasks routes", () => {
     await db.prisma.pendingAction.create({
       data: {
         kind: "editTitle",
-        userId: task!.assignedToId,
+        userId: task!.ownerId,
         taskId: task!.id,
       },
     });

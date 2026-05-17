@@ -13,8 +13,6 @@ describe('fromApiTask', () => {
       dueHasTime: true,
       createdAt: '2024-01-01T00:00:00.000Z',
       doneAt: null,
-      createdByNumId: 1,
-      assignedToNumId: 1,
     };
     const view = fromApiTask(dto);
     expect(view.dueAt).toBeInstanceOf(Date);
@@ -31,8 +29,6 @@ describe('fromApiTask', () => {
       dueHasTime: false,
       createdAt: '2024-06-01T08:00:00.000Z',
       doneAt: null,
-      createdByNumId: 2,
-      assignedToNumId: 2,
     };
     const view = fromApiTask(dto);
     expect(view.dueAt).toBeNull();
@@ -52,8 +48,6 @@ describe('fromApiTask', () => {
       dueHasTime: false,
       createdAt: '2024-01-10T12:00:00.000Z',
       doneAt,
-      createdByNumId: 2,
-      assignedToNumId: 2,
     };
     const view = fromApiTask(dto);
     expect(view.doneAt).toBeInstanceOf(Date);

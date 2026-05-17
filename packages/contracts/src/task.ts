@@ -11,8 +11,6 @@ export const TaskDtoSchema = z.object({
   dueHasTime: z.boolean(),
   createdAt: z.string().datetime(),
   doneAt: z.string().datetime().nullable(),
-  createdByNumId: z.number().int(),
-  assignedToNumId: z.number().int(),
 });
 export type TaskDto = z.infer<typeof TaskDtoSchema>;
 

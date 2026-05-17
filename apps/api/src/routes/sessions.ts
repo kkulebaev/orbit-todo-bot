@@ -60,7 +60,7 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
       let taskId: string | null = null;
       if (taskNumId !== undefined) {
         const owned = await prisma.task.findFirst({
-          where: { numId: taskNumId, assignedToId: req.viewer!.id },
+          where: { numId: taskNumId, ownerId: req.viewer!.id },
           select: { id: true },
         });
         if (!owned) throw notFound();
@@ -144,14 +144,14 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
 
       // If a taskPatch is requested we must verify the task is owned by the
       // viewer (AC-4/AC-5) before opening the transaction. Verification
-      // outside the transaction is safe: the same `id`+`assignedToId` is
+      // outside the transaction is safe: the same `id`+`ownerId` is
       // checked inside the update via `where`, so a concurrent reassign
       // (which we do not support) would result in `count: 0` and a 404.
       let taskDbId: string | null = null;
       if (taskPatch) {
         if (!session.taskId) throw notFound();
         const owned = await prisma.task.findFirst({
-          where: { id: session.taskId, assignedToId: viewerId },
+          where: { id: session.taskId, ownerId: viewerId },
           select: { id: true },
         });
         if (!owned) throw notFound();
@@ -184,7 +184,6 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
               prisma.task.update({
                 where: { id: taskDbId },
                 data,
-                include: { assignedTo: true, createdBy: true },
               }),
             ]
           : []),
@@ -201,9 +200,8 @@ export function sessionsRoutes(prisma: PrismaClient): Router {
         if (session.taskId) {
           const t = await prisma.task.findUnique({
             where: { id: session.taskId },
-            include: { assignedTo: true, createdBy: true },
           });
-          if (t && t.assignedToId === viewerId) {
+          if (t && t.ownerId === viewerId) {
             res.json(toTaskDto(t));
             return;
           }

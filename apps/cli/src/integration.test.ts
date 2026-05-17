@@ -50,8 +50,6 @@ function taskFixture(overrides: Record<string, unknown> = {}) {
     dueHasTime: false,
     createdAt: '2026-05-16T10:00:00.000Z',
     doneAt: null,
-    createdByNumId: 1,
-    assignedToNumId: 1,
     ...overrides,
   };
 }
