@@ -3,8 +3,9 @@
 </p>
 
 <p align="center">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Telegram-26A5E4" />
-  <img alt="runtime" src="https://img.shields.io/badge/runtime-Node.js-339933" />
+  <img alt="clients" src="https://img.shields.io/badge/clients-Telegram%20%2B%20CLI-26A5E4" />
+  <img alt="tui" src="https://img.shields.io/badge/TUI-Ink-5cd5ff" />
+  <img alt="runtime" src="https://img.shields.io/badge/runtime-Node.js%2024-339933" />
   <img alt="db" src="https://img.shields.io/badge/db-PostgreSQL-336791" />
   <img alt="orm" src="https://img.shields.io/badge/ORM-Prisma-2D3748" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-informational" />
@@ -12,12 +13,14 @@
 
 # Orbit TODO
 
-A small, private Telegram TODO bot for personal use, families, and small teams.
+A small, private TODO system for personal use, families, and small teams,
+with two front-ends sharing the same REST API: a Telegram bot and an `orbit`
+CLI (with an interactive TUI mode).
 
-- Two-service architecture: thin Telegram client + REST API
-- Webhook-based (no long polling)
+- Three-package split: thin Telegram bot · `orbit` CLI · REST API (Prisma-owned)
+- Webhook-based bot (no long polling); PAT-authenticated public CLI
 - PostgreSQL storage (Prisma, owned by API only)
-- Inline keyboard UX (quick actions)
+- Inline keyboards in Telegram · arrow-key TUI in the CLI
 
 ---
 
@@ -56,9 +59,11 @@ A small, private Telegram TODO bot for personal use, families, and small teams.
 orbit-todo/
 ├── apps/
 │   ├── bot/                  # @orbit/bot — Telegram webhook, pure HTTP client
-│   └── api/                  # @orbit/api — REST + Prisma
+│   ├── api/                  # @orbit/api — REST + Prisma
+│   └── cli/                  # @orbit/cli — `orbit` binary (commands + Ink TUI)
 ├── packages/
-│   └── contracts/            # @orbit/contracts — Zod schemas + TS types
+│   ├── contracts/            # @orbit/contracts — Zod schemas + TS types
+│   └── api-client/           # @orbit/api-client — framework-free HTTP client
 ├── docs/
 │   └── railway-deploy.md     # Deployment runbook
 └── pnpm-workspace.yaml
@@ -75,8 +80,10 @@ The bot has **no** database access. Every persistent operation goes through
 ## HTTP surface (`@orbit/api`)
 
 Base: `http://<api-host>/v1`. All endpoints require:
-- `Authorization: Bearer ${API_BOT_TOKEN}`
-- `X-Telegram-User-Id: <bigint>`
+- `Authorization: Bearer <orbit_pat_…>` — a Personal Access Token. User PATs (minted
+  via `/cli_link`) resolve to the bound user; the bot's PAT (`canImpersonate=true`,
+  source IP must be inside `BOT_PAT_ALLOWED_CIDR`) impersonates the user named by
+  the `X-Telegram-User-Id` header.
 
 | Method | Path | Notes |
 |---|---|---|
@@ -138,7 +145,7 @@ pnpm --filter @orbit/api exec prisma generate
 pnpm --filter @orbit/api dev
 
 # Bot (port 3000), in a separate shell
-API_BASE_URL=http://localhost:8080 API_BOT_TOKEN=<token> \
+API_BASE_URL=http://localhost:8080 BOT_PAT=orbit_pat_… \
   pnpm --filter @orbit/bot dev
 ```
 
@@ -170,7 +177,8 @@ pnpm -r typecheck
 pnpm -r test
 ```
 
-Totals: 26 (contracts) + 94 (bot) + 28 (api integration via testcontainers).
+All five workspaces run their own Vitest suite; `apps/api` uses
+`@testcontainers/postgresql` for real-DB integration tests.
 
 ```bash
 pnpm --filter @orbit/bot lint   # ESLint blocks @prisma/client imports
@@ -214,8 +222,10 @@ pnpm --filter @orbit/cli build
 cd apps/cli && pnpm link --global && cd -
 ```
 
-This exposes an `orbit` binary on your PATH via pnpm's global bin directory
-(`pnpm root -g`/`../bin` — add that to `PATH` if not already present).
+This exposes an `orbit` binary on your `PATH` via pnpm's global bin directory.
+Run `pnpm bin --global` to print the directory (typically
+`~/.local/share/pnpm`); `pnpm setup` adds it to your shell rc automatically.
+Verify with `which orbit && orbit --version`.
 
 > `npm publish` is a future follow-up (F4). For now the dev recipe above is the
 > only install path.
@@ -226,17 +236,19 @@ This exposes an `orbit` binary on your PATH via pnpm's global bin directory
 
 Obtain a PAT first:
 
-1. In Telegram: `/cli_link [optional label]`. The bot DMs a token matching
-   `orbit_pat_…`.
-2. `orbit login --token <pasted-token>` — saves to config.
+1. In Telegram: `/cli_link [optional label]`. The bot DMs both the raw PAT
+   and a ready-to-paste `orbit login --token <pat>` command (shown once).
+2. Paste that command into your shell — it saves config at
+   `$XDG_CONFIG_HOME/orbit/config.json` (default `~/.config/orbit/config.json`).
 3. `orbit whoami` — confirms the connection.
 
 | Command | Purpose |
 |---|---|
+| `orbit` | Launch interactive TUI (in a TTY). See **Interactive TUI** below. |
 | `orbit login --token <pat>` | Save a PAT minted via `/cli_link` in the bot |
 | `orbit logout` | Delete local config (does not revoke the PAT server-side) |
 | `orbit whoami [--json]` | Show authenticated user |
-| `orbit list [--mode my\|due-soon\|done] [--page N] [--json]` | List tasks |
+| `orbit list [--mode my\|due-soon\|done] [--page N \| --all] [--json]` | List tasks; prints a `Страница N из M` footer in human mode, `--all` collects every page |
 | `orbit show <numId> [--json]` | Show one task by numeric id |
 | `orbit add <text...> [--due "DD.MM.YYYY [HH:MM]"] [--json]` | Create a task |
 | `orbit done <numId> [--json]` | Mark a task done |
@@ -261,6 +273,47 @@ omit to auto-generate a `randomUUID()`.
 
 **Env overrides:** `ORBIT_API_BASE_URL`, `ORBIT_TOKEN` (override config
 without touching the file — useful for scripting and CI).
+
+---
+
+## Interactive TUI
+
+Running `orbit` with no subcommand in a TTY launches a full-screen interactive
+view (Ink-based). In non-TTY contexts (pipes, CI) it falls through to the
+standard `--help` output, so scripts are unaffected.
+
+```
+🪐 Orbit · Мои задачи
+Страница: 1 / 3
+
+  1. 5 букв · ⏰ сегодня
+> 2. Стрим "Разбираемся с навайбкоженным" · ⏰ через 2 дня
+  3. Прогнать Дашин договор через Claude
+  …
+```
+
+**List view**
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` (or `k` / `j`) | Move cursor |
+| `←` / `→` (or `h` / `l`) | Previous / next page |
+| `enter` | Open the task card |
+| `d` | Mark selected task done |
+| `o` | Reopen selected (done) task |
+| `m` | Cycle mode: `my → due-soon → done` |
+| `g` / `r` | Refresh |
+| `q` / `esc` | Exit |
+
+**Task card**
+
+| Key | Action |
+|---|---|
+| `d` / `o` | Toggle status |
+| `e` | Edit title (inline; `enter` saves, `esc` cancels) |
+| `t` | Edit due date (`DD.MM.YYYY [HH:MM]`; empty buffer clears the date) |
+| `x` / `X` | Delete (then `y` to confirm, `n` / `esc` to cancel) |
+| `q` / `esc` | Back to list |
 
 ---
 
