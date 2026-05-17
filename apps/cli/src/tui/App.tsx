@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 
 import type { ApiViewerClient } from '@orbit/api-client';
-import { PAGE_SIZE, parseDueDateInput, type TaskDto } from '@orbit/contracts';
+import {
+  formatSmart,
+  PAGE_SIZE,
+  parseDueDateInput,
+  type TaskDto,
+} from '@orbit/contracts';
 
 import { renderDueCell } from '../render/task.js';
 import { useTasks, type TaskMode } from './use-tasks.js';
@@ -295,11 +300,11 @@ export function App({
 
   return (
     <Box flexDirection="column">
-      <Box>
-        <Text bold>🪐 Orbit · {MODE_LABEL[mode]}</Text>
-      </Box>
       {view === 'list' ? (
         <>
+          <Box>
+            <Text bold>🪐 Orbit · {MODE_LABEL[mode]}</Text>
+          </Box>
           <Box>
             <Text>Страница: {page + 1} / {totalPages}</Text>
           </Box>
@@ -315,19 +320,12 @@ export function App({
           </Box>
         </>
       ) : selected ? (
-        <Box marginTop={1}>
-          <DetailView
-            task={selected}
-            now={now}
-            subMode={subMode}
-            editBuffer={editBuffer}
-          />
-        </Box>
-      ) : null}
-      {view === 'detail' ? (
-        <Box marginTop={1}>
-          <Text dimColor>Карточка задачи</Text>
-        </Box>
+        <DetailView
+          task={selected}
+          now={now}
+          subMode={subMode}
+          editBuffer={editBuffer}
+        />
       ) : null}
       {message ? (
         <Box>
@@ -431,28 +429,39 @@ function DetailView({
   subMode: SubMode;
   editBuffer: string;
 }): React.JSX.Element {
-  const due = task.dueAt ? renderDueCell(task, now) : '(нет)';
+  const statusLine = task.status === 'done' ? '✅ Выполнено' : '⏳ В работе';
+  const createdLine = `Создано: ${formatSmart(new Date(task.createdAt), now)}`;
+  const showDueLine = task.dueAt !== null || subMode === 'edit-due';
+  const dueText = task.dueAt ? renderDueCell(task, now) : '';
   return (
     <Box flexDirection="column">
-      <Text bold>
-        #{task.numId}{' '}
-        {subMode === 'edit-title' ? (
-          <Text color="yellow">{editBuffer}▎</Text>
-        ) : (
-          task.title
-        )}
-      </Text>
-      <Text>Статус: {task.status}</Text>
-      <Text>
-        Срок:{' '}
-        {subMode === 'edit-due' ? (
-          <Text color="yellow">{editBuffer || '(пусто)'}▎</Text>
-        ) : (
-          due
-        )}
-      </Text>
-      <Text>Создано: {task.createdAt}</Text>
-      {task.doneAt ? <Text>Закрыто: {task.doneAt}</Text> : null}
+      <Text bold>📝 Задача</Text>
+      <Box marginTop={1}>
+        <Text bold>
+          {subMode === 'edit-title' ? (
+            <Text color="yellow">{editBuffer}▎</Text>
+          ) : (
+            task.title
+          )}
+        </Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text>{statusLine}</Text>
+        <Text>{createdLine}</Text>
+        {showDueLine ? (
+          <Text>
+            Срок:{' '}
+            {subMode === 'edit-due' ? (
+              <Text color="yellow">{editBuffer || '(пусто)'}▎</Text>
+            ) : (
+              dueText
+            )}
+          </Text>
+        ) : null}
+        {task.status === 'done' && task.doneAt ? (
+          <Text>Закрыто: {formatSmart(new Date(task.doneAt), now)}</Text>
+        ) : null}
+      </Box>
       {subMode === 'confirm-delete' ? (
         <Box marginTop={1}>
           <Text color="red">Удалить задачу? (y/n)</Text>

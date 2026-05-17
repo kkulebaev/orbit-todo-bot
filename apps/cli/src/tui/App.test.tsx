@@ -215,8 +215,9 @@ describe('TUI App', () => {
     );
     await waitForFrame(lastFrame, (f) => f.includes('detail-me'));
     stdin.write(ENTER);
-    const detail = await waitForFrame(lastFrame, (f) => f.includes('Карточка задачи'));
-    expect(detail).toContain('#42');
+    const detail = await waitForFrame(lastFrame, (f) => f.includes('📝 Задача'));
+    expect(detail).toContain('detail-me');
+    expect(detail).toContain('⏳ В работе');
     stdin.write(ESC);
     await waitForFrame(lastFrame, (f) => f.includes('Страница: 1 / 1'));
   });
@@ -267,7 +268,7 @@ describe('TUI App — detail-view actions', () => {
     );
     await waitForFrame(harness.lastFrame, (f) => f.includes(task.title));
     harness.stdin.write(ENTER);
-    await waitForFrame(harness.lastFrame, (f) => f.includes('Карточка задачи'));
+    await waitForFrame(harness.lastFrame, (f) => f.includes('📝 Задача'));
     return { api, task, ...harness };
   }
 
@@ -315,7 +316,7 @@ describe('TUI App — detail-view actions', () => {
     await waitForFrame(lastFrame, (f) => f.includes('pick milk▎'));
     // Empty the buffer (9 chars of 'pick milk')
     for (let i = 0; i < 9; i++) stdin.write('');
-    await waitForFrame(lastFrame, (f) => /#100 ▎/.test(f));
+    await waitForFrame(lastFrame, (f) => !f.includes('milk'));
     stdin.write(ENTER);
     await waitForFrame(lastFrame, (f) => f.includes('Название не может быть пустым'));
     expect(api.updateTask).not.toHaveBeenCalled();
@@ -391,7 +392,7 @@ describe('TUI App — detail-view actions', () => {
     await waitForFrame(lastFrame, (f) => !f.includes('Удалить задачу?'));
     expect(api.deleteTask).not.toHaveBeenCalled();
     // Still in detail.
-    expect(lastFrame()!).toContain('Карточка задачи');
+    expect(lastFrame()!).toContain('📝 Задача');
   });
 
   it('detail edit-title: ignores "q" (treated as a character, not exit)', async () => {
