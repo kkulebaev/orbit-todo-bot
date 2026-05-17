@@ -8,7 +8,6 @@
  * remain testable with a simple mock.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { SessionKind, UpdateTaskInput } from '@orbit/contracts';
 import type { ApiClient } from '@orbit/api-client';
 import type { ViewerView } from './viewer-view.js';
@@ -90,14 +89,11 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
     },
 
     async create(viewer, kind, payload, opts) {
-      const session = await view(viewer).createSession(
-        {
-          kind,
-          payload: encodePayload(payload),
-          ...(opts?.taskNumId !== undefined ? { taskNumId: opts.taskNumId } : {}),
-        },
-        randomUUID(),
-      );
+      const session = await view(viewer).createSession({
+        kind,
+        payload: encodePayload(payload),
+        ...(opts?.taskNumId !== undefined ? { taskNumId: opts.taskNumId } : {}),
+      });
       return {
         id: session.id,
         kind: session.kind,
@@ -106,11 +102,11 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
     },
 
     async updatePayload(viewer, id, payload) {
-      await view(viewer).updateSession(id, { payload: encodePayload(payload) }, randomUUID());
+      await view(viewer).updateSession(id, { payload: encodePayload(payload) });
     },
 
     async delete(viewer, id) {
-      await view(viewer).deleteSession(id, randomUUID());
+      await view(viewer).deleteSession(id);
     },
 
     async deleteAll(viewer) {
@@ -121,16 +117,15 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
       for (let i = 0; i < 16; i++) {
         const s = await v.getLatestSession();
         if (!s) return;
-        await v.deleteSession(s.id, randomUUID());
+        await v.deleteSession(s.id);
       }
     },
 
     async commit(viewer, id, taskPatch) {
-      const result = await view(viewer).commitSession(
-        id,
-        { taskPatch, deleteSession: true },
-        randomUUID(),
-      );
+      const result = await view(viewer).commitSession(id, {
+        taskPatch,
+        deleteSession: true,
+      });
       // commitSession returns null when the session or its linked task is gone
       // (API 404).
       return result !== null;

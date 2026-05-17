@@ -153,10 +153,10 @@ export interface ApiViewerClient {
 
   // Sessions
   getLatestSession(kind?: SessionKind): Promise<SessionDto | null>;
-  createSession(input: CreateSessionInput, idempotencyKey: string): Promise<SessionDto>;
-  updateSession(id: string, patch: UpdateSessionInput, idempotencyKey: string): Promise<SessionDto | null>;
-  deleteSession(id: string, idempotencyKey: string): Promise<boolean>;
-  commitSession(id: string, input: CommitSessionInput, idempotencyKey: string): Promise<TaskDto | null>;
+  createSession(input: CreateSessionInput, idempotencyKey?: string): Promise<SessionDto>;
+  updateSession(id: string, patch: UpdateSessionInput, idempotencyKey?: string): Promise<SessionDto | null>;
+  deleteSession(id: string, idempotencyKey?: string): Promise<boolean>;
+  commitSession(id: string, input: CommitSessionInput, idempotencyKey?: string): Promise<TaskDto | null>;
 
   // CLI tokens
   mintCliToken(input: MintCliTokenInput, idempotencyKey: string): Promise<MintCliTokenResponse>;
@@ -434,7 +434,7 @@ export function createApiClient(cfg: ApiClientConfig) {
 
         async createSession(
           input: CreateSessionInput,
-          idempotencyKey: string,
+          idempotencyKey?: string,
         ): Promise<SessionDto> {
           const result = await req(
             {
@@ -453,7 +453,7 @@ export function createApiClient(cfg: ApiClientConfig) {
         async updateSession(
           id: string,
           patch: UpdateSessionInput,
-          idempotencyKey: string,
+          idempotencyKey?: string,
         ): Promise<SessionDto | null> {
           return req(
             {
@@ -469,7 +469,7 @@ export function createApiClient(cfg: ApiClientConfig) {
           );
         },
 
-        async deleteSession(id: string, idempotencyKey: string): Promise<boolean> {
+        async deleteSession(id: string, idempotencyKey?: string): Promise<boolean> {
           return reqBool(
             { ...v, method: 'DELETE', path: `/v1/sessions/${id}`, idempotencyKey },
             204,
@@ -480,7 +480,7 @@ export function createApiClient(cfg: ApiClientConfig) {
         async commitSession(
           id: string,
           input: CommitSessionInput,
-          idempotencyKey: string,
+          idempotencyKey?: string,
         ): Promise<TaskDto | null> {
           return req(
             {
