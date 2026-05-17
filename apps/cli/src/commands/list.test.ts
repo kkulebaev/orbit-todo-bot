@@ -99,7 +99,7 @@ describe('list', () => {
     const api = makeFakeApi();
     api.listTasks.mockResolvedValueOnce({
       page: 0,
-      total: 20,
+      total: 30,
       items: [makeTask({ numId: 1, title: 't1' })],
     });
     const l = logs();
@@ -107,7 +107,7 @@ describe('list', () => {
     expect(code).toBe(EXIT_OK);
     const stdout = l.out.join('\n');
     expect(stdout).toContain('Страница 1 из 3');
-    expect(stdout).toContain('всего 20');
+    expect(stdout).toContain('всего 30');
     expect(stdout).toContain('далее: orbit list --page 1');
   });
 
@@ -115,7 +115,7 @@ describe('list', () => {
     const api = makeFakeApi();
     api.listTasks.mockResolvedValueOnce({
       page: 2,
-      total: 20,
+      total: 30,
       items: [makeTask({ numId: 1, title: 't1' })],
     });
     const l = logs();

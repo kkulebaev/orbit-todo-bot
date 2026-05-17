@@ -31,8 +31,8 @@ const ARROW_RIGHT = '[C';
 const ENTER = '\r';
 const ESC = '';
 
-function eight(prefix: string, status: 'open' | 'done' = 'open') {
-  return Array.from({ length: 8 }, (_, i) =>
+function tasksFor(prefix: string, n: number, status: 'open' | 'done' = 'open') {
+  return Array.from({ length: n }, (_, i) =>
     makeTask({ numId: i + 1, title: `${prefix}${i + 1}`, status }),
   );
 }
@@ -103,11 +103,11 @@ describe('TUI App', () => {
   it('arrow-right advances to the next page and refetches', async () => {
     const api = makeFakeApi();
     api.listTasks
-      .mockResolvedValueOnce({ page: 0, total: 10, items: eight('p0_') })
+      .mockResolvedValueOnce({ page: 0, total: 13, items: tasksFor('p0_', 12) })
       .mockResolvedValueOnce({
         page: 1,
-        total: 10,
-        items: [makeTask({ numId: 9, title: 'p1_only' })],
+        total: 13,
+        items: [makeTask({ numId: 13, title: 'p1_only' })],
       });
 
     const { lastFrame, stdin } = render(
