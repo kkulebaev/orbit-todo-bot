@@ -58,7 +58,7 @@ describe('TUI App', () => {
     expect(frame).toContain('first');
     expect(frame).toContain('second');
     expect(frame).toContain('third');
-    expect(frame).toMatch(/>\s+ +#1\s+first/);
+    expect(frame).toMatch(/> 1\. first/);
   });
 
   it('arrow-down moves the cursor to the next task', async () => {
@@ -75,9 +75,9 @@ describe('TUI App', () => {
     const { lastFrame, stdin } = render(
       <App client={api} idempotencyKey={KEY} now={NOW} exitOnQuit={false} />,
     );
-    await waitForFrame(lastFrame, (f) => f.includes('#2'));
+    await waitForFrame(lastFrame, (f) => f.includes('2. b'));
     stdin.write(ARROW_DOWN);
-    await waitForFrame(lastFrame, (f) => />\s+ +#2\s+b/.test(f));
+    await waitForFrame(lastFrame, (f) => /> 2\. b/.test(f));
   });
 
   it('arrow-up clamps cursor at 0', async () => {
@@ -97,7 +97,7 @@ describe('TUI App', () => {
     await flush();
     stdin.write(ARROW_UP);
     await flush();
-    expect(lastFrame()!).toMatch(/>\s+ +#1\s+a/);
+    expect(lastFrame()!).toMatch(/> 1\. a/);
   });
 
   it('arrow-right advances to the next page and refetches', async () => {
@@ -117,7 +117,7 @@ describe('TUI App', () => {
     stdin.write(ARROW_RIGHT);
     await waitForFrame(lastFrame, (f) => f.includes('p1_only'));
     expect(api.listTasks).toHaveBeenNthCalledWith(2, { mode: 'my', page: 1 });
-    expect(lastFrame()!).toContain('Страница 2 из 2');
+    expect(lastFrame()!).toContain('Страница: 2 / 2');
   });
 
   it('arrow-right is a no-op on the last page', async () => {
@@ -152,7 +152,7 @@ describe('TUI App', () => {
     await flush();
     await flush();
     expect(api.listTasks).toHaveBeenNthCalledWith(2, { mode: 'due-soon', page: 0 });
-    expect(lastFrame()!).toContain('Orbit — скоро дедлайн');
+    expect(lastFrame()!).toContain('Orbit · Скоро дедлайн');
   });
 
   it('"d" calls updateTask({status:"done"}) for the selected open task', async () => {
@@ -218,7 +218,7 @@ describe('TUI App', () => {
     const detail = await waitForFrame(lastFrame, (f) => f.includes('Карточка задачи'));
     expect(detail).toContain('#42');
     stdin.write(ESC);
-    await waitForFrame(lastFrame, (f) => f.includes('Страница 1 из 1'));
+    await waitForFrame(lastFrame, (f) => f.includes('Страница: 1 / 1'));
   });
 
   it('renders "Нет задач." on an empty list', async () => {

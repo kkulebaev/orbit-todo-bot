@@ -9,9 +9,9 @@ import { useTasks, type TaskMode } from './use-tasks.js';
 
 const MODES: readonly TaskMode[] = ['my', 'due-soon', 'done'];
 const MODE_LABEL: Record<TaskMode, string> = {
-  my: 'мои',
-  'due-soon': 'скоро дедлайн',
-  done: 'закрытые',
+  my: 'Мои задачи',
+  'due-soon': 'Скоро дедлайн',
+  done: 'Выполненные',
 };
 
 type SubMode = null | 'edit-title' | 'edit-due' | 'confirm-delete';
@@ -295,32 +295,40 @@ export function App({
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1}>
-        <Text bold>Orbit — {MODE_LABEL[mode]}</Text>
+      <Box>
+        <Text bold>🪐 Orbit · {MODE_LABEL[mode]}</Text>
       </Box>
       {view === 'list' ? (
-        <ListView
-          items={items}
-          cursor={cursor}
-          loading={loading}
-          error={error}
-          now={now}
-        />
+        <>
+          <Box>
+            <Text>Страница: {page + 1} / {totalPages}</Text>
+          </Box>
+          <Box marginTop={1}>
+            <ListView
+              items={items}
+              cursor={cursor}
+              loading={loading}
+              error={error}
+              now={now}
+              page={page}
+            />
+          </Box>
+        </>
       ) : selected ? (
-        <DetailView
-          task={selected}
-          now={now}
-          subMode={subMode}
-          editBuffer={editBuffer}
-        />
+        <Box marginTop={1}>
+          <DetailView
+            task={selected}
+            now={now}
+            subMode={subMode}
+            editBuffer={editBuffer}
+          />
+        </Box>
       ) : null}
-      <Box marginTop={1}>
-        <Text dimColor>
-          {view === 'list'
-            ? `Страница ${page + 1} из ${totalPages} · всего ${total}`
-            : 'Карточка задачи'}
-        </Text>
-      </Box>
+      {view === 'detail' ? (
+        <Box marginTop={1}>
+          <Text dimColor>Карточка задачи</Text>
+        </Box>
+      ) : null}
       {message ? (
         <Box>
           <Text color="cyan">{message}</Text>
@@ -358,12 +366,14 @@ function ListView({
   loading,
   error,
   now,
+  page,
 }: {
   items: TaskDto[];
   cursor: number;
   loading: boolean;
   error: string | null;
   now: Date;
+  page: number;
 }): React.JSX.Element {
   if (error) {
     return (
@@ -390,15 +400,18 @@ function ListView({
     <Box flexDirection="column">
       {items.map((task, i) => {
         const sel = i === cursor;
+        const n = page * PAGE_SIZE + i + 1;
         const due = task.dueAt ? renderDueCell(task, now) : '';
-        const id = `#${task.numId}`;
-        const mark = task.status === 'done' ? '✓' : ' ';
         return (
           <Box key={task.numId}>
             <Text inverse={sel}>
               {sel ? '> ' : '  '}
-              {mark} {id.padEnd(5)} {task.title}
-              {due ? `  (${due})` : ''}
+              {n}. {task.title}
+              {due ? (
+                <>
+                  {' '}· ⏰ <Text italic>{due}</Text>
+                </>
+              ) : null}
             </Text>
           </Box>
         );
