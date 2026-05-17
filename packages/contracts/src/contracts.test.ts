@@ -130,17 +130,28 @@ describe("SessionDtoSchema", () => {
 });
 
 describe("CommitSessionInputSchema", () => {
-  it("requires deleteSession: true (literal)", () => {
-    const result = CommitSessionInputSchema.safeParse({ deleteSession: true });
+  it("requires deleteSession: true and a taskPatch", () => {
+    const result = CommitSessionInputSchema.safeParse({
+      deleteSession: true,
+      taskPatch: {},
+    });
     expect(result.success).toBe(true);
   });
 
   it("rejects if deleteSession is false", () => {
-    const result = CommitSessionInputSchema.safeParse({ deleteSession: false });
+    const result = CommitSessionInputSchema.safeParse({
+      deleteSession: false,
+      taskPatch: {},
+    });
     expect(result.success).toBe(false);
   });
 
-  it("accepts optional taskPatch", () => {
+  it("rejects if taskPatch is missing", () => {
+    const result = CommitSessionInputSchema.safeParse({ deleteSession: true });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts taskPatch with optional fields", () => {
     const result = CommitSessionInputSchema.safeParse({
       deleteSession: true,
       taskPatch: { title: "New title", status: "done" },
@@ -150,30 +161,18 @@ describe("CommitSessionInputSchema", () => {
 });
 
 describe("CreateSessionInputSchema", () => {
-  it("defaults ttlSeconds to 3600", () => {
+  it("accepts minimal input", () => {
     const result = CreateSessionInputSchema.safeParse({
       kind: "addTask",
       payload: "{}",
     });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.ttlSeconds).toBe(3600);
-    }
   });
 
   it("rejects payload exceeding 8000 chars", () => {
     const result = CreateSessionInputSchema.safeParse({
       kind: "addTask",
       payload: "x".repeat(8001),
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects ttlSeconds below minimum (60)", () => {
-    const result = CreateSessionInputSchema.safeParse({
-      kind: "addTask",
-      payload: "{}",
-      ttlSeconds: 30,
     });
     expect(result.success).toBe(false);
   });

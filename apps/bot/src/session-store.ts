@@ -48,7 +48,7 @@ export interface SessionStore {
   deleteAll(viewer: ViewerView): Promise<void>;
 
   /**
-   * Atomically: optional `task.update(taskPatch)` + `session.delete` via
+   * Atomically: `task.update(taskPatch)` + `session.delete` via
    * `POST /v1/sessions/:id/commit`.
    *
    * Returns `false` when the session or its linked task no longer exists
@@ -57,7 +57,7 @@ export interface SessionStore {
   commit(
     viewer: ViewerView,
     id: string,
-    taskPatch?: UpdateTaskInput,
+    taskPatch: UpdateTaskInput,
   ): Promise<boolean>;
 }
 
@@ -94,7 +94,6 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
         {
           kind,
           payload: encodePayload(payload),
-          ttlSeconds: 3600,
           ...(opts?.taskNumId !== undefined ? { taskNumId: opts.taskNumId } : {}),
         },
         randomUUID(),
@@ -133,10 +132,7 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
         randomUUID(),
       );
       // commitSession returns null when the session or its linked task is gone
-      // (API 404). With no taskPatch the server returns 204 → api-client also
-      // returns null, but "session deleted" is exactly what callers want —
-      // treat null-without-patch as success.
-      if (taskPatch === undefined) return true;
+      // (API 404).
       return result !== null;
     },
   };

@@ -23,12 +23,11 @@ export type SessionDto = z.infer<typeof SessionDtoSchema>;
 export const CreateSessionInputSchema = z.object({
   kind: SessionKindSchema,
   payload: z.string().max(8000),
-  ttlSeconds: z.number().int().min(60).max(86400).default(3600),
   /**
    * Optional task association. When provided, the API resolves the task by
    * `numId` (scoped to the viewer) and stores its internal id on the session.
-   * Required for later `POST /v1/sessions/:id/commit` calls that include a
-   * `taskPatch` (atomic task.update + session.delete).
+   * Required for later `POST /v1/sessions/:id/commit` calls (which always
+   * carry a `taskPatch`).
    */
   taskNumId: z.number().int().positive().optional(),
 });
@@ -36,19 +35,16 @@ export type CreateSessionInput = z.infer<typeof CreateSessionInputSchema>;
 
 export const UpdateSessionInputSchema = z.object({
   payload: z.string().max(8000).optional(),
-  ttlSeconds: z.number().int().min(60).max(86400).optional(),
 });
 export type UpdateSessionInput = z.infer<typeof UpdateSessionInputSchema>;
 
 export const CommitSessionInputSchema = z.object({
-  taskPatch: z
-    .object({
-      title: z.string().min(1).max(500).optional(),
-      dueAt: z.string().datetime().nullable().optional(),
-      dueHasTime: z.boolean().optional(),
-      status: z.enum(["open", "done"]).optional(),
-    })
-    .optional(),
+  taskPatch: z.object({
+    title: z.string().min(1).max(500).optional(),
+    dueAt: z.string().datetime().nullable().optional(),
+    dueHasTime: z.boolean().optional(),
+    status: z.enum(["open", "done"]).optional(),
+  }),
   deleteSession: z.literal(true),
 });
 export type CommitSessionInput = z.infer<typeof CommitSessionInputSchema>;

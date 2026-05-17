@@ -165,16 +165,23 @@ describe("sessions routes", () => {
   });
 
   it("POST /v1/sessions/:id/commit — 404 for a different user's session", async () => {
+    // Create a task owned by user "10" and a session linked to it.
+    const ownerTask = await request(app)
+      .post("/v1/tasks")
+      .set(authHeaders("10"))
+      .send({ title: "owner task" });
+    const ownerTaskNumId = (ownerTask.body as { numId: number }).numId;
+
     const created = await request(app)
       .post("/v1/sessions")
       .set(authHeaders("10"))
-      .send({ kind: "addTask", payload: "x" });
+      .send({ kind: "editTitle", payload: "x", taskNumId: ownerTaskNumId });
     const { id } = created.body as { id: string };
 
     const res = await request(app)
       .post(`/v1/sessions/${id}/commit`)
       .set(authHeaders("11")) // wrong user
-      .send({ deleteSession: true });
+      .send({ taskPatch: { title: "stolen" }, deleteSession: true });
     expect(res.status).toBe(404);
   });
 
@@ -289,7 +296,7 @@ describe("sessions routes", () => {
     expect(stolen.status).toBe(404);
   });
 
-  it("POST /v1/sessions/:id/commit — without taskPatch deletes session and returns 204", async () => {
+  it("POST /v1/sessions/:id/commit — 400 when taskPatch is missing", async () => {
     const created = await request(app)
       .post("/v1/sessions")
       .set(authHeaders("30"))
@@ -300,10 +307,10 @@ describe("sessions routes", () => {
       .post(`/v1/sessions/${id}/commit`)
       .set(authHeaders("30"))
       .send({ deleteSession: true }); // no taskPatch
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(400);
 
-    // Session should be gone.
+    // Session is untouched — caller must use DELETE /v1/sessions/:id.
     const after = await db.prisma.pendingAction.findUnique({ where: { id } });
-    expect(after).toBeNull();
+    expect(after).not.toBeNull();
   });
 });
