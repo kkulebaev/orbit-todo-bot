@@ -131,7 +131,7 @@
     <text x="380" y="120" fill="url(#title)" font-size="62" font-weight="800" letter-spacing="-1.2">Orbit TODO</text>
 
     <text x="382" y="160" fill="#9fb3d6" font-size="20" font-weight="500" letter-spacing="0.2">
-      Telegram bot + REST API · pnpm monorepo · Postgres
+      Telegram bot · orbit CLI/TUI · REST API · pnpm monorepo · Postgres
     </text>
 
     <!-- pill badges -->
@@ -155,6 +155,11 @@
         <rect x="0" y="0" width="86" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
         <circle cx="14" cy="13" r="4" fill="#7bf0a8"/>
         <text x="26" y="17" fill="#cfe1ff">Node 24</text>
+      </g>
+      <g transform="translate(392 0)">
+        <rect x="0" y="0" width="80" height="26" rx="13" fill="#1a1f3d" stroke="#2a3160"/>
+        <circle cx="14" cy="13" r="4" fill="#5cd5ff"/>
+        <text x="26" y="17" fill="#cfe1ff">Ink TUI</text>
       </g>
     </g>
   </g>
