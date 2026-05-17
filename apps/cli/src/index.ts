@@ -38,6 +38,19 @@ export function buildProgram(): Command {
 }
 
 async function main(argv: string[]): Promise<void> {
+  // `orbit` (no subcommand) in an interactive terminal → launch TUI.
+  // In non-TTY contexts (pipes, CI), fall through to commander, which prints
+  // help and exits 0.
+  if (
+    argv.length === 2 &&
+    process.stdout.isTTY === true &&
+    process.stdin.isTTY === true
+  ) {
+    const { runTui } = await import('./tui/run.js');
+    const code = await runTui();
+    process.exit(code);
+  }
+
   const program = buildProgram();
   program.exitOverride();
   // commander applies exitOverride only to the parent program; subcommands
