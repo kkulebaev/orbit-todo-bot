@@ -1,18 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, fmtUser, kbList } from './utils.js';
+import { escapeHtml, kbList } from './utils.js';
 
 describe('utils', () => {
   it('escapeHtml escapes <, > and &', () => {
     expect(escapeHtml('a & b < c > d')).toBe('a &amp; b &lt; c &gt; d');
-  });
-
-  it('fmtUser prefers username', () => {
-    expect(fmtUser({ username: 'kk', firstName: 'Kostya' } as any)).toBe('@kk');
-  });
-
-  it('fmtUser falls back to firstName, then to "user"', () => {
-    expect(fmtUser({ username: null, firstName: 'Kostya' } as any)).toBe('Kostya');
-    expect(fmtUser({ username: null, firstName: null } as any)).toBe('user');
   });
 
   it('kbList renders pagination controls disabled on first page', () => {

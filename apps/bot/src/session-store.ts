@@ -20,14 +20,6 @@ export type SessionRow = {
   payload: SessionPayload;
 };
 
-/** The four kinds the bot persists. Mirrors SessionKind from @orbit/contracts. */
-const ALL_KINDS: readonly SessionKind[] = [
-  'editTitle',
-  'addTask',
-  'addTaskDraft',
-  'setDueDate',
-];
-
 export interface SessionStore {
   /** Returns the most recent session for the viewer, across all kinds. */
   findLatest(viewer: ViewerView): Promise<SessionRow | null>;
@@ -78,18 +70,12 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
 
   return {
     async findLatest(viewer) {
-      // The API has no "any kind" endpoint, so we fan out across the four
-      // known kinds and pick the most recently created result.
-      const v = view(viewer);
-      const results = await Promise.all(ALL_KINDS.map((k) => v.getLatestSession(k)));
-      const sessions = results.filter((s): s is NonNullable<typeof s> => s !== null);
-      if (sessions.length === 0) return null;
-      sessions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      const latest = sessions[0];
+      const session = await view(viewer).getLatestSession();
+      if (!session) return null;
       return {
-        id: latest.id,
-        kind: latest.kind,
-        payload: decodePayload(latest.payload),
+        id: session.id,
+        kind: session.kind,
+        payload: decodePayload(session.payload),
       };
     },
 
@@ -129,14 +115,15 @@ export function createApiSessionStore(api: ApiClient): SessionStore {
     },
 
     async deleteAll(viewer) {
-      // Best-effort: list per kind, delete each. Used by /start, /cancel, /my, /done.
+      // Best-effort: walk the latest session (any kind) and delete until empty.
+      // Used by /start, /cancel, /my, /done.
       const v = view(viewer);
-      const results = await Promise.all(ALL_KINDS.map((k) => v.getLatestSession(k)));
-      await Promise.all(
-        results
-          .filter((s): s is NonNullable<typeof s> => s !== null)
-          .map((s) => v.deleteSession(s.id, randomUUID())),
-      );
+      // Safety cap to avoid an unbounded loop if the API misbehaves.
+      for (let i = 0; i < 16; i++) {
+        const s = await v.getLatestSession();
+        if (!s) return;
+        await v.deleteSession(s.id, randomUUID());
+      }
     },
 
     async commit(viewer, id, taskPatch) {

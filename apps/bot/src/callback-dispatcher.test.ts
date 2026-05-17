@@ -69,7 +69,6 @@ function makeDeps() {
     api,
     sessionStore,
     InlineKeyboard,
-    fmtUser: (u: any) => (u.username ? `@${u.username}` : 'user'),
     fmtTaskLine: () => 'line',
     upsertUserFromCtx: vi.fn(async () => ({ id: 'me', telegramUserId: BigInt(42) })),
     showList: vi.fn(async () => {}),

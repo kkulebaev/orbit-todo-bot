@@ -46,17 +46,15 @@ export function toTaskDto(
  * (PA-2 opaque endpoints). The bot is the sole producer/consumer of `payload`
  * — API treats it as an opaque string and stores it in `draftTitle`.
  *
- * If `expiresAt` is null on legacy rows, fall back to `createdAt + 1h` so the
- * wire format never emits null and the cron job has a value to compare.
+ * `expiresAt` is always set on the create path (see sessionsRoutes), so we
+ * non-null assert here.
  */
 export function toSessionDto(p: PendingAction): SessionDto {
-  const expiresAt =
-    p.expiresAt ?? new Date(p.createdAt.getTime() + 3600_000);
   return {
     id: p.id,
     kind: p.kind,
     payload: p.draftTitle ?? "",
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: p.expiresAt!.toISOString(),
     createdAt: p.createdAt.toISOString(),
   };
 }

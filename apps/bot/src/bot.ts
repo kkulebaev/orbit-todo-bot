@@ -1,7 +1,7 @@
 import { Context, InlineKeyboard } from 'grammy';
 import { randomUUID } from 'node:crypto';
 import { bot } from './bot-instance.js';
-import { escapeHtml, fmtTaskLine, fmtUser, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
+import { escapeHtml, fmtTaskLine, isTelegramMessageNotModifiedError, kbList, PAGE_SIZE, truncate, type ListMode } from './utils.js';
 import { parseCallbackData } from './callback-data.js';
 import { dispatchCallbackData } from './callback-dispatcher.js';
 import { createCallbackDeduper } from './callback-deduper.js';
@@ -467,7 +467,6 @@ bot.on('callback_query:data', async (ctx, next) => {
       upsertUserFromCtx,
       sessionStore,
       InlineKeyboard,
-      fmtUser,
       fmtTaskLine,
       api: apiClient,
     } as any);

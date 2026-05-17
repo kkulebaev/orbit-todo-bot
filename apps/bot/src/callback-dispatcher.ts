@@ -37,7 +37,6 @@ export type DispatchDeps = {
   api: ApiClient;
 
   InlineKeyboard: new () => InlineKeyboardLike;
-  fmtUser: (u: { username?: string | null; firstName?: string | null }) => string;
   fmtTaskLine: (t: unknown) => string;
 };
 

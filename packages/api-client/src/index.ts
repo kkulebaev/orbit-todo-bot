@@ -142,7 +142,7 @@ export function redactSensitiveHeaders(
 
 export interface ApiViewerClient {
   // Tasks
-  listTasks(params?: { mode?: 'my' | 'due-soon' | 'done'; page?: number }): Promise<TaskListResponse>;
+  listTasks(params?: { mode?: 'my' | 'done'; page?: number }): Promise<TaskListResponse>;
   getTask(numId: number): Promise<TaskDto | null>;
   createTask(input: CreateTaskInput, idempotencyKey: string): Promise<TaskDto>;
   updateTask(numId: number, patch: UpdateTaskInput, idempotencyKey: string): Promise<TaskDto | null>;
@@ -152,7 +152,7 @@ export interface ApiViewerClient {
   upsertMe(): Promise<UserDto>;
 
   // Sessions
-  getLatestSession(kind: SessionKind): Promise<SessionDto | null>;
+  getLatestSession(kind?: SessionKind): Promise<SessionDto | null>;
   createSession(input: CreateSessionInput, idempotencyKey: string): Promise<SessionDto>;
   updateSession(id: string, patch: UpdateSessionInput, idempotencyKey: string): Promise<SessionDto | null>;
   deleteSession(id: string, idempotencyKey: string): Promise<boolean>;
@@ -339,7 +339,7 @@ export function createApiClient(cfg: ApiClientConfig) {
         // ── Tasks ────────────────────────────────────────────────────────
 
         async listTasks(
-          params: { mode?: 'my' | 'due-soon' | 'done'; page?: number } = {},
+          params: { mode?: 'my' | 'done'; page?: number } = {},
         ): Promise<TaskListResponse> {
           const qs = new URLSearchParams();
           if (params.mode) qs.set('mode', params.mode);
@@ -415,12 +415,15 @@ export function createApiClient(cfg: ApiClientConfig) {
 
         // ── Sessions ─────────────────────────────────────────────────────
 
-        async getLatestSession(kind: SessionKind): Promise<SessionDto | null> {
-          const qs = new URLSearchParams({ kind });
+        async getLatestSession(kind?: SessionKind): Promise<SessionDto | null> {
+          const qs = new URLSearchParams();
+          if (kind) qs.set('kind', kind);
+          const qStr = qs.toString();
+          const path = `/v1/sessions/latest${qStr ? `?${qStr}` : ''}`;
           return req(
             {
               ...v,
-              path: `/v1/sessions/latest?${qs.toString()}`,
+              path,
               schema: SessionDtoSchema,
               retryOnNetworkError: true,
             },

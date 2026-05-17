@@ -8,11 +8,6 @@ export function escapeHtml(s: string) {
     .replaceAll('>', '&gt;');
 }
 
-export function fmtUser(u: { username?: string | null; firstName?: string | null }) {
-  if (u.username) return `@${u.username}`;
-  return u.firstName ?? 'user';
-}
-
 export function fmtTaskLine(t: {
   title: string;
   status: TaskStatus | 'open' | 'done';
@@ -29,10 +24,6 @@ export function truncate(s: string, max = 60) {
 export type ListMode = 'my' | 'done';
 
 export { PAGE_SIZE };
-
-// Open tasks with a deadline within this many calendar days (inclusive)
-// are surfaced above the rest, sorted by deadline ascending.
-export const DUE_SOON_DAYS = 7;
 
 export function isTelegramMessageNotModifiedError(e: unknown) {
   const msg = String((e as any)?.description ?? (e as any)?.message ?? '').toLowerCase();
