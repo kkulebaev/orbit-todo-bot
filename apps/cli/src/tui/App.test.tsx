@@ -151,8 +151,8 @@ describe('TUI App', () => {
     stdin.write('m');
     await flush();
     await flush();
-    expect(api.listTasks).toHaveBeenNthCalledWith(2, { mode: 'due-soon', page: 0 });
-    expect(lastFrame()!).toContain('Orbit · Скоро дедлайн');
+    expect(api.listTasks).toHaveBeenNthCalledWith(2, { mode: 'done', page: 0 });
+    expect(lastFrame()!).toContain('Orbit · Выполненные');
   });
 
   it('"d" calls updateTask({status:"done"}) for the selected open task', async () => {

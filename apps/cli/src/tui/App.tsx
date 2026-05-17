@@ -12,10 +12,9 @@ import {
 import { renderDueCell } from '../render/task.js';
 import { useTasks, type TaskMode } from './use-tasks.js';
 
-const MODES: readonly TaskMode[] = ['my', 'due-soon', 'done'];
+const MODES: readonly TaskMode[] = ['my', 'done'];
 const MODE_LABEL: Record<TaskMode, string> = {
   my: 'Мои задачи',
-  'due-soon': 'Скоро дедлайн',
   done: 'Выполненные',
 };
 

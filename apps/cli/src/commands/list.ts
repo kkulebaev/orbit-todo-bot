@@ -9,7 +9,7 @@ import { EXIT_OK, exitFromError } from '../exit-codes.js';
 import { renderTable } from '../render/table.js';
 import { renderTaskRow } from '../render/task.js';
 
-const MODES = new Set(['my', 'due-soon', 'done']);
+const MODES = new Set(['my', 'done']);
 
 export type ListDeps = {
   client?: ApiViewerClient;
@@ -28,7 +28,7 @@ export async function executeList(
 
   const mode = opts.mode ?? 'my';
   if (!MODES.has(mode)) {
-    err(`error: --mode must be one of: my, due-soon, done`);
+    err(`error: --mode must be one of: my, done`);
     return 1;
   }
   let page = 0;
@@ -56,7 +56,7 @@ export async function executeList(
     return exitFromError(e);
   }
 
-  const typedMode = mode as 'my' | 'due-soon' | 'done';
+  const typedMode = mode as 'my' | 'done';
 
   if (opts.all) {
     const collected: TaskDto[] = [];
@@ -113,7 +113,7 @@ export async function executeList(
 function renderPager(opts: {
   page: number;
   total: number;
-  mode: 'my' | 'due-soon' | 'done';
+  mode: 'my' | 'done';
 }): string {
   const { page, total, mode } = opts;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -127,7 +127,7 @@ export function registerList(program: Command): void {
   program
     .command('list')
     .description('List tasks. Default mode is "my".')
-    .option('--mode <mode>', 'my | due-soon | done', 'my')
+    .option('--mode <mode>', 'my | done', 'my')
     .option('--page <n>', 'Page index, 0-based')
     .option('--all', 'Fetch all pages and print as a single table')
     .option('--json', 'Output as JSON')

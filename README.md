@@ -248,7 +248,7 @@ Obtain a PAT first:
 | `orbit login --token <pat>` | Save a PAT minted via `/cli_link` in the bot |
 | `orbit logout` | Delete local config (does not revoke the PAT server-side) |
 | `orbit whoami [--json]` | Show authenticated user |
-| `orbit list [--mode my\|due-soon\|done] [--page N \| --all] [--json]` | List tasks; prints a `Страница N из M` footer in human mode, `--all` collects every page |
+| `orbit list [--mode my\|done] [--page N \| --all] [--json]` | List tasks; prints a `Страница N из M` footer in human mode, `--all` collects every page |
 | `orbit show <numId> [--json]` | Show one task by numeric id |
 | `orbit add <text...> [--due "DD.MM.YYYY [HH:MM]"] [--json]` | Create a task |
 | `orbit done <numId> [--json]` | Mark a task done |
@@ -301,7 +301,7 @@ standard `--help` output, so scripts are unaffected.
 | `enter` | Open the task card |
 | `d` | Mark selected task done |
 | `o` | Reopen selected (done) task |
-| `m` | Cycle mode: `my → due-soon → done` |
+| `m` | Cycle mode: `my ↔ done` |
 | `g` / `r` | Refresh |
 | `q` / `esc` | Exit |
 

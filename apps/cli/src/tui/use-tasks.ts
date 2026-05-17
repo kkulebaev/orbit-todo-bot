@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import type { ApiViewerClient } from '@orbit/api-client';
 import type { TaskDto } from '@orbit/contracts';
 
-export type TaskMode = 'my' | 'due-soon' | 'done';
+export type TaskMode = 'my' | 'done';
 
 export type TasksState = {
   items: TaskDto[];
