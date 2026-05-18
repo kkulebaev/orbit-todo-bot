@@ -403,3 +403,60 @@ describe('TUI App — detail-view actions', () => {
     await waitForFrame(lastFrame, (f) => f.includes('pick milkq▎'));
   });
 });
+
+describe('TUI App — create-task flow', () => {
+  it('"c" opens a create-task input that creates the task on enter and refreshes the list', async () => {
+    const api = makeFakeApi();
+    api.listTasks
+      .mockResolvedValueOnce({ page: 0, total: 0, items: [] })
+      .mockResolvedValueOnce({
+        page: 0,
+        total: 1,
+        items: [makeTask({ numId: 11, title: 'buy bread' })],
+      });
+    api.createTask.mockResolvedValueOnce(
+      makeTask({ numId: 11, title: 'buy bread' }),
+    );
+
+    const { lastFrame, stdin } = render(
+      <App client={api} idempotencyKey={KEY} now={NOW} exitOnQuit={false} />,
+    );
+    await waitForFrame(lastFrame, (f) => f.includes('Нет задач.'));
+    stdin.write('c');
+    await waitForFrame(lastFrame, (f) => f.includes('✍️ Новая задача'));
+    for (const ch of 'buy bread') stdin.write(ch);
+    await waitForFrame(lastFrame, (f) => f.includes('buy bread▎'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('#11 создано'));
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'buy bread' }, 'idem-key-1');
+    expect(api.listTasks).toHaveBeenCalledTimes(2);
+    expect(lastFrame()!).toContain('1. buy bread');
+  });
+
+  it('create-task: enter with empty buffer shows error, no API call', async () => {
+    const api = makeFakeApi();
+    const { lastFrame, stdin } = render(
+      <App client={api} idempotencyKey={KEY} now={NOW} exitOnQuit={false} />,
+    );
+    await flush();
+    stdin.write('c');
+    await waitForFrame(lastFrame, (f) => f.includes('✍️ Новая задача'));
+    stdin.write(ENTER);
+    await waitForFrame(lastFrame, (f) => f.includes('Название не может быть пустым'));
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+
+  it('create-task: esc cancels without calling createTask', async () => {
+    const api = makeFakeApi();
+    const { lastFrame, stdin } = render(
+      <App client={api} idempotencyKey={KEY} now={NOW} exitOnQuit={false} />,
+    );
+    await flush();
+    stdin.write('c');
+    await waitForFrame(lastFrame, (f) => f.includes('✍️ Новая задача'));
+    stdin.write('Z');
+    stdin.write(ESC);
+    await waitForFrame(lastFrame, (f) => !f.includes('✍️ Новая задача'));
+    expect(api.createTask).not.toHaveBeenCalled();
+  });
+});

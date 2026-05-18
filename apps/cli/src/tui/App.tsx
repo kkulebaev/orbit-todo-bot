@@ -18,7 +18,7 @@ const MODE_LABEL: Record<TaskMode, string> = {
   done: 'Выполненные',
 };
 
-type SubMode = null | 'edit-title' | 'edit-due' | 'confirm-delete';
+type SubMode = null | 'edit-title' | 'edit-due' | 'confirm-delete' | 'create-task';
 
 export type AppProps = {
   client: ApiViewerClient;
@@ -153,6 +153,27 @@ export function App({
     [client, idempotencyKey, now],
   );
 
+  const submitCreate = useCallback(
+    async (raw: string): Promise<void> => {
+      const title = raw.trim();
+      if (!title) {
+        setMessage('Название не может быть пустым');
+        return;
+      }
+      try {
+        const created = await client.createTask({ title }, idempotencyKey());
+        setMessage(`#${created.numId} создано`);
+        setSubMode(null);
+        setEditBuffer('');
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        setMessage(`Ошибка: ${m}`);
+      }
+    },
+    [client, idempotencyKey],
+  );
+
   const submitDelete = useCallback(
     async (task: TaskDto): Promise<void> => {
       try {
@@ -175,13 +196,21 @@ export function App({
       const sel = s.items[s.cursor];
 
       // ── Text-input sub-modes ──────────────────────────────────────────
-      if (s.subMode === 'edit-title' || s.subMode === 'edit-due') {
+      if (
+        s.subMode === 'edit-title' ||
+        s.subMode === 'edit-due' ||
+        s.subMode === 'create-task'
+      ) {
         if (key.escape) {
           setSubMode(null);
           setEditBuffer('');
           return;
         }
         if (key.return) {
+          if (s.subMode === 'create-task') {
+            void submitCreate(s.editBuffer);
+            return;
+          }
           if (!sel) return;
           if (s.subMode === 'edit-title') void submitTitle(sel, s.editBuffer);
           else void submitDue(sel, s.editBuffer);
@@ -258,6 +287,11 @@ export function App({
         setMessage(`Режим: ${MODE_LABEL[next]}`);
         return;
       }
+      if (input === 'c') {
+        setSubMode('create-task');
+        setEditBuffer('');
+        return;
+      }
       if (key.leftArrow || input === 'h') {
         setPage((p) => Math.max(0, p - 1));
         setCursor(0);
@@ -292,7 +326,7 @@ export function App({
         return;
       }
     },
-    [exit, exitOnQuit, mutateStatus, submitTitle, submitDue, submitDelete],
+    [exit, exitOnQuit, mutateStatus, submitTitle, submitDue, submitDelete, submitCreate],
   );
 
   useInput(handler);
@@ -307,6 +341,14 @@ export function App({
           <Box>
             <Text>Страница: {page + 1} / {totalPages}</Text>
           </Box>
+          {subMode === 'create-task' ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text>✍️ Новая задача:</Text>
+              <Text>
+                <Text color="yellow">{editBuffer || ' '}▎</Text>
+              </Text>
+            </Box>
+          ) : null}
           <Box marginTop={1}>
             <ListView
               items={items}
@@ -343,7 +385,10 @@ function helpBar(
   subMode: SubMode,
 ): string {
   if (view === 'list') {
-    return '↑↓ навигация · ←→ страница · enter открыть · d закрыть · o переоткрыть · m режим · g обновить · q выход';
+    if (subMode === 'create-task') {
+      return 'печатайте название · enter создать · esc отмена';
+    }
+    return '↑↓ навигация · ←→ страница · enter открыть · c создать · d закрыть · o переоткрыть · m режим · g обновить · q выход';
   }
   if (subMode === 'edit-title') {
     return 'печатайте · enter сохранить · esc отмена';
